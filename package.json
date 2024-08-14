@@ -1,0 +1,17 @@
+{
+  "name": "deskthingserver",
+  "version": "0.8.0",
+  "description": "The Deskthing connector for the server apps",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Riprod",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^22.2.0",
+    "typescript": "^5.5.4"
+  }
+}
