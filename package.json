@@ -1,5 +1,5 @@
 {
-  "name": "deskthingserver",
+  "name": "deskthing-app-server",
   "version": "0.8.0",
   "description": "The Deskthing connector for the server apps",
   "main": "dist/index.js",
