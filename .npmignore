@@ -1,0 +1,43 @@
+# Ignore source files
+index.ts
+
+# Ignore development files
+tsconfig.json
+.gitignore
+.npmignore
+
+# Ignore test files
+__tests__/
+*.test.ts
+*.spec.ts
+
+# Ignore documentation
+README.md
+CHANGELOG.md
+LICENSE
+
+# Ignore development scripts
+scripts/
+
+# Ignore configuration files
+.eslintrc.js
+.prettierrc
+
+# Ignore source maps
+*.map
+
+# Ignore any other development or build artifacts
+node_modules/
+coverage/
+.vscode/
+.idea/
+
+# Don't ignore the compiled JavaScript file and type definitions
+!dist/index.js
+!dist/index.d.ts
+
+# Don't ignore the package.json file
+!package.json
+
+# Don't ignore the manifest file
+!manifest.json

@@ -1,6 +1,6 @@
 type DeskthingListener = (...args: any[]) => void;
-export type IncomingEvent = 'message' | 'data' | 'get' | 'set' | 'callback-data' | 'start' | 'stop' | 'input';
-export type OutgoingEvent = 'message' | 'data' | 'get' | 'set' | 'add' | 'open' | 'toApp' | 'error' | 'log';
+export type IncomingEvent = 'message' | 'data' | 'get' | 'set' | 'callback-data' | 'start' | 'stop' | 'input' | 'action';
+export type OutgoingEvent = 'message' | 'data' | 'get' | 'set' | 'add' | 'open' | 'toApp' | 'error' | 'log' | 'action' | 'button';
 export type GetTypes = 'data' | 'config' | 'input';
 export interface Manifest {
     type: string[];
@@ -44,7 +44,7 @@ export interface SocketData {
         [key: string]: string | Array<string>;
     };
 }
-interface DataInterface {
+export interface DataInterface {
     [key: string]: string | Settings | undefined;
     settings?: Settings;
 }
@@ -70,6 +70,7 @@ export declare class DeskThing {
     private data;
     private settings;
     private backgroundTasks;
+    private isDataBeingFetched;
     stopRequested: boolean;
     constructor();
     static getInstance(): DeskThing;
@@ -78,7 +79,7 @@ export declare class DeskThing {
     on(event: IncomingEvent, callback: DeskthingListener): () => void;
     off(event: IncomingEvent, callback: DeskthingListener): void;
     onSystem(event: string, listener: (...args: any[]) => void): () => void;
-    once(event: IncomingEvent): Promise<any>;
+    once(event: IncomingEvent, callback?: DeskthingListener): Promise<any>;
     private sendData;
     private requestData;
     send(event: OutgoingEvent, ...args: any[]): void;
@@ -91,13 +92,17 @@ export declare class DeskThing {
     getData(): Promise<DataInterface | null>;
     getConfig(name: string): void;
     getSettings(): Promise<Settings | null>;
-    getUserInput(scopes: AuthScopes): Promise<InputResponse | null>;
-    addSetting(label: string, defaultValue: string | boolean, options: {
+    getUserInput(scopes: AuthScopes, callback: DeskthingListener): Promise<void>;
+    addSetting(id: string, label: string, defaultValue: string | boolean, options: {
         label: string;
         value: string | boolean;
     }[]): void;
+    registerAction(name: string, id: string, description: string, flair?: string): void;
+    registerKey(id: string): void;
+    removeAction(id: string): void;
+    removeKey(id: string): void;
     saveData(data: DataInterface): void;
-    addBackgroundTask(task: () => Promise<void>): () => void;
+    addBackgroundTaskKLoop(task: () => Promise<void>): () => void;
     /**
      * Deskthing Server Functions
      */

@@ -3,7 +3,7 @@ import * as path from 'path';
 type DeskthingListener = (...args: any[]) => void
 
 export type IncomingEvent = 'message' | 'data' | 'get' | 'set' | 'callback-data' | 'start' | 'stop' | 'input' | 'action'
-export type OutgoingEvent = 'message' | 'data' | 'get' | 'set' | 'add' | 'open' | 'toApp' | 'error' | 'log'
+export type OutgoingEvent = 'message' | 'data' | 'get' | 'set' | 'add' | 'open' | 'toApp' | 'error' | 'log' | 'action' | 'button'
 export type GetTypes = 'data' | 'config' | 'input'
 export interface Manifest {
     type: string[]
@@ -48,7 +48,7 @@ export interface SocketData {
     request?: string;
     data?: Array<string> | string | object | number | { [key: string]: string | Array<string> };
 }
-interface DataInterface {
+export interface DataInterface {
     [key: string]: string | Settings | undefined
     settings?: Settings
 }
@@ -76,12 +76,12 @@ export class DeskThing {
     private sysListeners: DeskthingListener[] = []
     private data: DataInterface = {}
     private settings: Settings = {}
-    private backgroundTasks: Array<() => Promise<void>> = [];
+    private backgroundTasks: Array<() => void> = [];
+    private isDataBeingFetched: boolean = false
     stopRequested: boolean = false
 
     constructor() {
         this.loadManifest();
-        this.initializeData()
     }
 
     static getInstance(): DeskThing {
@@ -143,19 +143,27 @@ export class DeskThing {
         return () => { }; // Return a no-op function if SysEvents is not defined
     }
 
-    async once(event: IncomingEvent): Promise<any> {
-        return new Promise<any>((resolve) => {
+    async once(event: IncomingEvent, callback?: DeskthingListener): Promise<any> {
+        if (callback) {
             const onceWrapper = (...args: any[]) => {
                 this.off(event, onceWrapper);
-                resolve(args.length === 1 ? args[0] : args);
+                callback(...args);
             };
-
+    
             this.on(event, onceWrapper);
-        });
+        } else {
+            return new Promise<any>((resolve) => {
+                const onceWrapper = (...args: any[]) => {
+                    this.off(event, onceWrapper);
+                    resolve(args.length === 1 ? args[0] : args);
+                };
+    
+                this.on(event, onceWrapper);
+            });
+        }
     }
 
     private sendData(event: OutgoingEvent, ...data: any): void {
-        //this.notifyListeners(event, data)
         if (this.toServer == null) {
             console.error('toServer is not defined')
             return
@@ -192,14 +200,30 @@ export class DeskThing {
     }
     async getData(): Promise<DataInterface | null> {
         if (!this.data) {
-            console.error('Data is not defined.');
+
+            if (this.isDataBeingFetched) {
+                return null; // Or consider queuing the request
+            }
+            this.isDataBeingFetched = true;
             this.requestData('data')
-            const data = await this.once('data') // waits for the data response from the server
-            if (data) {
-                return data;
-            } else {
-                this.sendLog('Data is not defined!');
-                return null
+            try {
+                const data = await Promise.race([
+                    this.once('data'),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Data retrieval timed out')), 5000)) // Adjust timeout as needed
+                ]);
+    
+                if (data) {
+                    this.isDataBeingFetched = false;
+                    return data;
+                } else {
+                    this.sendError('Data is not defined! Try restarting the app');
+                    this.isDataBeingFetched = false;
+                    return null;
+                }
+            } catch (error) {
+                this.sendLog(`Error fetching data: ${error}`);
+                this.isDataBeingFetched = false;
+                return null;
             }
         } else {
             return this.data
@@ -223,18 +247,25 @@ export class DeskThing {
         }
     }
 
-    async getUserInput(scopes: AuthScopes): Promise<InputResponse | null> {
+    async getUserInput(scopes: AuthScopes, callback: DeskthingListener): Promise<void> {
         if (!scopes) {
             this.sendError('Scopes not defined in getUserInput!')
-            return null
+            return
         }
-        this.requestData('input', scopes)
-        const response = await this.once('input')
-        return response
+        try {
+            // Wait for the 'input' event and pass the response to the callback
+            const response = await this.once('input');
+            
+            if (callback && typeof callback === 'function') {
+                callback(response);
+            }
+        } catch (error) {
+            this.sendError(`Error occurred while waiting for input: ${error}`);
+        }
     }
 
-    addSetting(label: string, defaultValue: string | boolean, options: { label: string, value: string | boolean }[]): void {
-        if (this.settings[label]) {
+    addSetting(id: string, label: string, defaultValue: string | boolean, options: { label: string, value: string | boolean }[]): void {
+        if (this.settings[id]) {
             console.warn(`Setting with label "${label}" already exists. It will be overwritten.`);
             this.sendLog(`Setting with label "${label}" already exists. It will be overwritten.`)
         }
@@ -245,8 +276,23 @@ export class DeskThing {
             options
         }
 
-        this.settings[label] = setting
+        this.settings[id] = setting
         this.sendData('add', { settings: this.settings })
+    }
+
+    registerAction(name: string, id: string, description: string, flair: string = ''): void {
+        this.sendData('action', 'add', { name, id, description, flair })
+    }
+
+    registerKey(id: string): void {
+        this.sendData('button', 'add', { id })
+    }
+
+    removeAction(id: string): void {
+        this.sendData('action', 'remove', { id })
+    }
+    removeKey(id: string): void {
+        this.sendData('button', 'remove', { id })
     }
 
     saveData(data: DataInterface): void {
@@ -262,24 +308,26 @@ export class DeskThing {
             };
         }
 
-
         this.sendData('add', this.data)
+        this.notifyListeners('data', this.data);
     }
 
-    addBackgroundTask(task: () => Promise<void>): () => void {
+    addBackgroundTaskKLoop(task: () => Promise<void>): () => void {
         const cancelToken = { cancelled: false };
-
-        const wrappedTask = async () => {
-            if (!cancelToken.cancelled) {
+    
+        const wrappedTask = async (): Promise<void> => {
+            while (!cancelToken.cancelled) {
                 await task();
             }
         };
-
-        this.backgroundTasks.push(wrappedTask);
-
+    
+        this.backgroundTasks.push(() => {
+            cancelToken.cancelled = true;
+        });
+        wrappedTask(); // Start the task immediately
+    
         return () => {
             cancelToken.cancelled = true;
-            this.backgroundTasks = this.backgroundTasks.filter(t => t !== wrappedTask);
         };
     }
 
@@ -289,14 +337,7 @@ export class DeskThing {
      * Deskthing Server Functions
      */
     private loadManifest(): void {
-        let manifestPath: string;
-
-        if (process.env.NODE_ENV === 'development') {
-            manifestPath = path.resolve(__dirname, '../public/manifest.json');
-        } else {
-            manifestPath = path.resolve(__dirname, './manifest.json');
-        }
-
+        const manifestPath = path.resolve(__dirname, './manifest.json');
         try {
             const manifestData = fs.readFileSync(manifestPath, 'utf-8');
             this.manifest = JSON.parse(manifestData);
@@ -326,6 +367,7 @@ export class DeskThing {
     async start({ toServer, SysEvents }: startData): Promise<Response> {
         this.toServer = toServer
         this.SysEvents = SysEvents
+        this.initializeData()
 
         try {
             await this.notifyListeners('start')
@@ -356,15 +398,12 @@ export class DeskThing {
             this.stopRequested = true;
 
             // Stop all background tasks
-            this.backgroundTasks.forEach(task => task());
-            console.log('Background tasks stopped');
+            this.backgroundTasks.forEach(cancel => cancel());
+            this.sendLog('Background tasks stopped');
 
             // Clear cached data
             this.clearCache();
-            console.log('Cache cleared');
-
-            // Optionally, force stop the Node.js process (if needed)
-            // process.exit(0); // Uncomment if you want to forcefully exit
+            this.sendLog('Cache cleared');
 
         } catch (error) {
             console.error('Error in stop:', error);
@@ -401,8 +440,7 @@ export class DeskThing {
     }
 
     toClient(channel: IncomingEvent, ...args: any[]): void {
-        this.notifyListeners(channel, ...args);
-
+        
         if (channel === 'data' && args.length > 0) {
             const [data] = args; // Extract the first argument as data
             if (typeof data === 'object' && data !== null) {
@@ -413,6 +451,20 @@ export class DeskThing {
             }
         } else if (channel === 'message') {
             this.sendLog('Received message from server:' + args[0]);
+        } else if (channel === 'set' && args[0] == 'settings' && args[1]) {
+            const {id, value} = args[1]
+            if (this.settings[id]) {
+                this.sendLog(`Setting with label "${id}" changing from ${this.settings[id].value} to ${value}`)
+
+                this.settings[id].value = value
+                this.sendData('add', { settings: this.settings })
+                this.notifyListeners('data', this.data);
+            } else {
+                this.sendLog(`Setting with label "${id}" not found`)
+            }
+
+        } else {
+            this.notifyListeners(channel, ...args);
         }
     }
 }
