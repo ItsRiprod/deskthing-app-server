@@ -294,12 +294,19 @@ class DeskThing {
     }
     getManifest() {
         if (!this.manifest) {
-            return {
-                data: { message: 'Manifest not found or failed to load' },
-                status: 500,
-                statusText: 'Internal Server Error',
-                request: []
-            };
+            console.log('Manifest Not Found - trying to load manually...');
+            this.loadManifest();
+            if (!this.manifest) {
+                return {
+                    data: { message: 'Manifest not found or failed to load after 2nd attempt' },
+                    status: 500,
+                    statusText: 'Internal Server Error',
+                    request: []
+                };
+            }
+            else {
+                console.log('Manifest loaded!');
+            }
         }
         return {
             data: this.manifest,
@@ -312,7 +319,7 @@ class DeskThing {
         return __awaiter(this, arguments, void 0, function* ({ toServer, SysEvents }) {
             this.toServer = toServer;
             this.SysEvents = SysEvents;
-            this.initializeData();
+            yield this.initializeData();
             try {
                 yield this.notifyListeners('start');
             }

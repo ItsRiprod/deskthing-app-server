@@ -348,12 +348,18 @@ export class DeskThing {
 
     getManifest(): Response {
         if (!this.manifest) {
-            return {
-                data: { message: 'Manifest not found or failed to load' },
-                status: 500,
-                statusText: 'Internal Server Error',
-                request: []
-            };
+            console.log('Manifest Not Found - trying to load manually...')
+            this.loadManifest()
+            if (!this.manifest) {
+                return {
+                    data: { message: 'Manifest not found or failed to load after 2nd attempt' },
+                    status: 500,
+                    statusText: 'Internal Server Error',
+                    request: []
+                };
+            } else {
+                console.log('Manifest loaded!') 
+            }
         }
 
         return {
@@ -367,7 +373,7 @@ export class DeskThing {
     async start({ toServer, SysEvents }: startData): Promise<Response> {
         this.toServer = toServer
         this.SysEvents = SysEvents
-        this.initializeData()
+        await this.initializeData()
 
         try {
             await this.notifyListeners('start')
