@@ -42,35 +42,56 @@ class DeskThing {
         this.toServer = null;
         this.SysEvents = null;
         this.sysListeners = [];
-        this.data = {};
-        this.settings = {};
+        this.data = null;
         this.backgroundTasks = [];
         this.isDataBeingFetched = false;
+        this.dataFetchQueue = [];
         this.stopRequested = false;
         this.loadManifest();
     }
+    /**
+     * Singleton pattern: Ensures only one instance of DeskThing exists.
+     *
+     * @example
+     * const deskThing = DeskThing.getInstance();
+     */
     static getInstance() {
         if (!this.instance) {
             this.instance = new DeskThing();
         }
         return this.instance;
     }
+    /**
+     * Initializes data if it is not already set on the server.
+     * This method is run internally when there is no data retrieved from the server.
+     *
+     * @example
+     * const deskThing = DeskThing.getInstance();
+     * deskThing.start({ toServer, SysEvents });
+     */
     initializeData() {
         return __awaiter(this, void 0, void 0, function* () {
-            const data = yield this.getData();
-            if (data) {
-                this.data = data;
-                if (this.data.settings) {
-                    this.settings = this.data.settings;
+            if (this.data) {
+                if (!this.data.settings) {
+                    this.data.settings = {};
                 }
+                this.sendData('set', this.data);
             }
             else {
-                if (this.data) {
-                    this.sendData('set', this.data);
-                }
+                this.data = {
+                    settings: {}
+                };
+                this.sendData('set', this.data);
             }
         });
     }
+    /**
+     * Notifies all listeners of a particular event.
+     *
+     * @example
+     * deskThing.on('message', (msg) => console.log(msg));
+     * deskThing.notifyListeners('message', 'Hello, World!');
+     */
     notifyListeners(event, ...args) {
         return __awaiter(this, void 0, void 0, function* () {
             const callbacks = this.Listeners[event];
@@ -79,6 +100,17 @@ class DeskThing {
             }
         });
     }
+    /**
+     * Registers an event listener for a specific incoming event.
+     *
+     * @param event - The event to listen for.
+     * @param callback - The function to call when the event occurs.
+     * @returns A function to remove the listener.
+     *
+     * @example
+     * const removeListener = deskThing.on('data', (data) => console.log(data));
+     * removeListener(); // To remove the listener
+     */
     on(event, callback) {
         if (!this.Listeners[event]) {
             this.Listeners[event] = [];
@@ -86,12 +118,32 @@ class DeskThing {
         this.Listeners[event].push(callback);
         return () => this.off(event, callback);
     }
+    /**
+     * Removes a specific event listener for a particular incoming event.
+     *
+     * @param event - The event for which to remove the listener.
+     * @param callback - The listener function to remove.
+     *
+     * @example
+     * deskThing.off('data', dataListener);
+     */
     off(event, callback) {
         if (!this.Listeners[event]) {
             return;
         }
         this.Listeners[event] = this.Listeners[event].filter(cb => cb !== callback);
     }
+    /**
+     * Registers a system event listener. This feature is somewhat limited but allows for detecting when there are new audiosources or button mappings registered to the server.
+     *
+     * @param event - The system event to listen for.
+     * @param listener - The function to call when the event occurs.
+     * @returns A function to remove the listener.
+     *
+     * @example
+     * const removeSysListener = deskThing.onSystem('config', (config) => console.log('Config changed', config));
+     * removeSysListener(); // To remove the system event listener
+     */
     onSystem(event, listener) {
         if (this.SysEvents) {
             const removeListener = this.SysEvents(event, listener);
@@ -106,6 +158,16 @@ class DeskThing {
         }
         return () => { }; // Return a no-op function if SysEvents is not defined
     }
+    /**
+     * Registers a one-time listener for an incoming event. The listener will be automatically removed after the first occurrence of the event.
+     *
+     * @param event - The event to listen for.
+     * @param callback - Optional callback function. If omitted, returns a promise.
+     * @returns A promise that resolves with the event data if no callback is provided.
+     *
+     * @example
+     * deskThing.once('data').then(data => console.log('Received data:', data));
+     */
     once(event, callback) {
         return __awaiter(this, void 0, void 0, function* () {
             if (callback) {
@@ -126,78 +188,221 @@ class DeskThing {
             }
         });
     }
-    sendData(event, ...data) {
+    /**
+     * Sends data to the server with a specified event type.
+     *
+     * @param event - The event type to send.
+     * @param payload - The data to send.
+     * @param request - Optional request string.
+     *
+     * @example
+     * deskThing.sendData('log', { message: 'Logging an event' });
+     */
+    sendData(event, payload, request) {
         if (this.toServer == null) {
             console.error('toServer is not defined');
             return;
         }
-        this.toServer(event, data);
+        const outgoingData = {
+            type: event,
+            request: request || '',
+            payload: payload
+        };
+        this.toServer(outgoingData);
     }
-    requestData(event, scopes) {
+    /**
+     * Requests data from the server with optional scopes.
+     *
+     * @param request - The type of data to request ('data', 'config', or 'input').
+     * @param scopes - Optional scopes to request specific data.
+     *
+     * @example
+     * deskThing.requestData('data');
+     */
+    requestData(request, scopes) {
         const authScopes = scopes || {};
-        this.sendData('get', event, authScopes);
+        this.sendData('get', authScopes, request);
     }
-    send(event, ...args) {
-        this.sendData(event, args);
+    /**
+     * Public method to send data to the server.
+     *
+     * @param event - The event type to send.
+     * @param payload - The data to send.
+     * @param request - Optional request string.
+     *
+     * @example
+     * deskThing.send('message', 'Hello, Server!');
+     */
+    send(event, payload, request) {
+        this.sendData(event, payload, request);
     }
+    /**
+     * Sends a plain text message to the server. This will display as a gray notification on the DeskThingServer GUI
+     *
+     * @param message - The message to send to the server.
+     *
+     * @example
+     * deskThing.sendMessage('Hello, Server!');
+     */
     sendMessage(message) {
         this.send('message', message);
     }
+    /**
+     * Sends a log message to the server. This will be saved to the .logs file and be saved in the Logs on the DeskThingServer GUI
+     *
+     * @param message - The log message to send.
+     *
+     * @example
+     * deskThing.sendLog('This is a log message.');
+     */
     sendLog(message) {
         this.send('log', message);
     }
+    /**
+     * Sends an error message to the server. This will show up as a red notification
+     *
+     * @param message - The error message to send.
+     *
+     * @example
+     * deskThing.sendError('An error occurred!');
+     */
     sendError(message) {
         this.send('error', message);
     }
-    sendDataToOtherApp(appId, data) {
-        this.send('toApp', { appId, data });
+    /**
+     * Routes request to another app running on the server.
+     *
+     * @param appId - The ID of the target app.
+     * @param data - The data to send to the target app.
+     *
+     * @example
+     * deskThing.sendDataToOtherApp('utility', { type: 'set', request: 'next', payload: { id: '' } });
+     */
+    sendDataToOtherApp(appId, payload) {
+        this.send('toApp', payload, appId);
     }
+    /**
+     * Sends structured data to the client through the server. This will be received by the webapp client. "app" defaults to the current app.
+     *
+     * @param data - The structured data to send to the client, including app, type, request, and data.
+     *
+     * @example
+     * deskThing.sendDataToClient({
+     *   app: 'client',
+     *   type: 'set',
+     *   request: 'next',
+     *   data: { key: 'value' }
+     * });
+     */
     sendDataToClient(data) {
         this.send('data', data);
     }
+    /**
+     * Requests the server to open a specified URL.
+     *
+     * @param url - The URL to open.
+     *
+     * @example
+     * deskThing.openUrl('https://example.com');
+     */
     openUrl(url) {
         this.send('open', url);
     }
+    /**
+     * Fetches data from the server if not already retrieved, otherwise returns the cached data.
+     * This method also handles queuing requests while data is being fetched.
+     *
+     * @returns A promise that resolves with the data fetched or the cached data, or null if data is not available.
+     *
+     * @example
+     * const data = await deskThing.getData();
+     * console.log('Fetched data:', data);
+     */
     getData() {
         return __awaiter(this, void 0, void 0, function* () {
             if (!this.data) {
                 if (this.isDataBeingFetched) {
-                    return null; // Or consider queuing the request
+                    console.warn('Data is already being fetched!!');
+                    return new Promise((resolve) => {
+                        this.dataFetchQueue.push(resolve);
+                    });
                 }
                 this.isDataBeingFetched = true;
                 this.requestData('data');
                 try {
                     const data = yield Promise.race([
                         this.once('data'),
-                        new Promise((_, reject) => setTimeout(() => reject(new Error('Data retrieval timed out')), 5000)) // Adjust timeout as needed
+                        new Promise((resolve) => setTimeout(() => resolve(null), 5000)) // Adjust timeout as needed
                     ]);
+                    this.isDataBeingFetched = false;
                     if (data) {
-                        this.isDataBeingFetched = false;
+                        this.dataFetchQueue.forEach(resolve => resolve(data));
+                        this.dataFetchQueue = [];
                         return data;
                     }
                     else {
-                        this.sendError('Data is not defined! Try restarting the app');
-                        this.isDataBeingFetched = false;
-                        return null;
+                        if (this.data) {
+                            this.sendLog('Failed to fetch data, but data was found');
+                            this.dataFetchQueue.forEach(resolve => resolve(this.data));
+                            this.dataFetchQueue = [];
+                            return this.data;
+                        }
+                        else {
+                            this.dataFetchQueue.forEach(resolve => resolve(null));
+                            this.dataFetchQueue = [];
+                            this.sendError('Data is not defined! Try restarting the app');
+                            return null;
+                        }
                     }
                 }
                 catch (error) {
                     this.sendLog(`Error fetching data: ${error}`);
                     this.isDataBeingFetched = false;
-                    return null;
+                    this.dataFetchQueue.forEach(resolve => resolve(this.data));
+                    this.dataFetchQueue = [];
+                    return this.data;
                 }
             }
             else {
+                //console.log('Returning ', this.data)
                 return this.data;
             }
         });
     }
+    /**
+     * Requests a specific configuration from the server by name.
+     *
+     * @param name - The name of the configuration to request.
+     * @returns A promise that resolves with the requested configuration or null if not found.
+     *
+     * @example
+     * deskThing.getConfig('myConfig');
+     */
     getConfig(name) {
-        this.requestData('config', name);
+        return __awaiter(this, void 0, void 0, function* () {
+            this.requestData('config', name);
+            return yield Promise.race([
+                this.once('config'),
+                new Promise((resolve) => setTimeout(() => {
+                    resolve(null);
+                    this.sendLog(`Failed to fetch config: ${name}`);
+                }, 5000)) // Adjust timeout as needed
+            ]);
+        });
     }
+    /**
+     * Asynchronously retrieves the current settings. If settings are not defined, it fetches them from the server.
+     *
+     * @returns The current settings or undefined if not set.
+     *
+     * @example
+     * const settings = deskThing.getSettings();
+     * console.log('Current settings:', settings);
+     */
     getSettings() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!this.settings) {
+            var _a;
+            if (!((_a = this.data) === null || _a === void 0 ? void 0 : _a.settings)) {
                 console.error('Settings are not defined!');
                 const data = yield this.getData();
                 if (data && data.settings) {
@@ -209,16 +414,34 @@ class DeskThing {
                 }
             }
             else {
-                return this.settings;
+                return this.data.settings;
             }
         });
     }
+    /**
+     * Requests user input for the specified scopes and triggers the provided callback with the input response.
+     * Commonly used for settings keys, secrets, and other user-specific data. Callback data will be a json object with keys matching the scope ids and values of the answers.
+     *
+     * @param scopes - The scopes to request input for, defining the type and details of the input needed.
+     * @param callback - The function to call with the input response once received.
+     *
+     * @example
+     * deskThing.getUserInput(
+     *   {
+     *     username: { instructions: 'Enter your username', label: 'Username' },
+     *     password: { instructions: 'Enter your password', label: 'Password' }
+     *   },
+     *   (response) => console.log('User input received:', response.username, response.password)
+     * );
+     */
     getUserInput(scopes, callback) {
         return __awaiter(this, void 0, void 0, function* () {
             if (!scopes) {
                 this.sendError('Scopes not defined in getUserInput!');
                 return;
             }
+            // Send the request to the server
+            this.requestData('input', scopes);
             try {
                 // Wait for the 'input' event and pass the response to the callback
                 const response = yield this.once('input');
@@ -231,44 +454,142 @@ class DeskThing {
             }
         });
     }
-    addSetting(id, label, defaultValue, options) {
-        if (this.settings[id]) {
-            console.warn(`Setting with label "${label}" already exists. It will be overwritten.`);
-            this.sendLog(`Setting with label "${label}" already exists. It will be overwritten.`);
+    /**
+     * Adds a new setting or overwrites an existing one. Automatically saves the new setting to the server to be persisted.
+     *
+     * @param id - The unique identifier for the setting.
+     * @param label - The display label for the setting.
+     * @param defaultValue - The default value for the setting.
+     * @param options - An array of options for the setting.
+     *
+     * @example
+     * // Adding a boolean setting
+     * deskThing.addSetting('darkMode', 'Dark Mode', false, [
+     *   { label: 'On', value: true },
+     *   { label: 'Off', value: false }
+     * ])
+     *
+     * @example
+     * // Adding a string setting with multiple options
+     * deskThing.addSetting('theme', 'Theme', 'light', [
+     *   { label: 'Light', value: 'light' },
+     *   { label: 'Dark', value: 'dark' },
+     *   { label: 'System', value: 'system' }
+     * ])
+     */
+    addSettings(settings) {
+        var _a;
+        if (!this.data) {
+            this.data = { settings: {} };
         }
-        const setting = {
-            value: defaultValue,
-            label,
-            options
-        };
-        this.settings[id] = setting;
-        this.sendData('add', { settings: this.settings });
+        else if (!this.data.settings) {
+            this.data.settings = {};
+        }
+        if ((_a = this.data) === null || _a === void 0 ? void 0 : _a.settings) {
+            Object.keys(settings).forEach((id) => {
+                var _a;
+                const setting = settings[id];
+                if (!((_a = this.data) === null || _a === void 0 ? void 0 : _a.settings))
+                    return;
+                if (this.data.settings[id]) {
+                    console.warn(`Setting with label "${setting.label}" already exists. It will be overwritten.`);
+                    this.sendLog(`Setting with label "${setting.label}" already exists. It will be overwritten.`);
+                }
+                this.data.settings[id] = {
+                    value: setting.value,
+                    label: setting.label,
+                    options: setting.options,
+                };
+            });
+            console.log('sending settings', this.data.settings);
+            this.sendData('add', { settings: this.data.settings });
+        }
     }
+    /**
+   * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
+   *
+   * @param name - The name of the action.
+   * @param id - The unique identifier for the action. This is what will be used when it is triggered
+   * @param description - A description of the action.
+   * @param flair - Optional flair for the action (default is an empty string).
+   */
     registerAction(name, id, description, flair = '') {
-        this.sendData('action', 'add', { name, id, description, flair });
+        this.sendData('action', { name, id, description, flair }, 'add');
     }
+    /**
+   * Registers a new key with the specified identifier. This can be mapped to any action. Use a keycode to map a specific keybind.
+   * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code
+   * The first number in the key will be passed to the action (e.g. customAction13 with action SwitchView will switch to the 13th view )
+   *
+   * @param id - The unique identifier for the key.
+   */
     registerKey(id) {
-        this.sendData('button', 'add', { id });
+        this.sendData('button', { id }, 'add');
     }
+    /**
+   * Removes an action with the specified identifier.
+   *
+   * @param id - The unique identifier of the action to be removed.
+   */
     removeAction(id) {
-        this.sendData('action', 'remove', { id });
+        this.sendData('action', { id }, 'remove');
     }
+    /**
+   * Removes a key with the specified identifier.
+   *
+   * @param id - The unique identifier of the key to be removed.
+   */
     removeKey(id) {
-        this.sendData('button', 'remove', { id });
+        this.sendData('button', { id }, 'remove');
     }
+    /**
+   * Saves the provided data by merging it with the existing data and updating settings.
+   * Sends the updated data to the server and notifies listeners.
+   *
+   * @param data - The data to be saved and merged with existing data.
+   */
     saveData(data) {
-        this.data = Object.assign(Object.assign({}, this.data), data);
-        if (data.settings) {
-            this.settings = Object.assign(Object.assign({}, this.settings), data.settings);
-        }
+        var _a;
+        this.data = Object.assign(Object.assign(Object.assign({}, this.data), data), { settings: Object.assign(Object.assign({}, (_a = this.data) === null || _a === void 0 ? void 0 : _a.settings), data.settings) });
         this.sendData('add', this.data);
         this.notifyListeners('data', this.data);
     }
-    addBackgroundTaskKLoop(task) {
+    /**
+     * Adds a background task that will loop until either the task is cancelled or the task function returns false.
+     * This is useful for tasks that need to run periodically or continuously in the background.
+     *
+     * @param task - The background task function to add. This function should return a Promise that resolves to a boolean or void.
+     * @returns A function to cancel the background task.
+     *
+     * @example
+     * // Add a background task that logs a message every 5 seconds
+     * const cancelTask = deskThing.addBackgroundTaskLoop(async () => {
+     *   console.log('Performing periodic task...');
+     *   await new Promise(resolve => setTimeout(resolve, 5000));
+     *   return false; // Return false to continue the loop
+     * });
+     *
+     * // Later, to stop the task:
+     * cancelTask();
+     *
+     * @example
+     * // Add a background task that runs until a condition is met
+     * let count = 0;
+     * deskThing.addBackgroundTaskLoop(async () => {
+     *   console.log(`Task iteration ${++count}`);
+     *   if (count >= 10) {
+     *     console.log('Task completed');
+     *     return true; // Return true to end the loop
+     *   }
+     *   return false; // Continue the loop
+     * });
+     */
+    addBackgroundTaskLoop(task) {
         const cancelToken = { cancelled: false };
         const wrappedTask = () => __awaiter(this, void 0, void 0, function* () {
-            while (!cancelToken.cancelled) {
-                yield task();
+            let endToken = false;
+            while (!cancelToken.cancelled && !endToken) {
+                endToken = (yield task()) || false;
             }
         });
         this.backgroundTasks.push(() => {
@@ -280,7 +601,45 @@ class DeskThing {
         };
     }
     /**
+ * Adds a background task that will loop until either the task is cancelled or the task function returns false.
+ * This is useful for tasks that need to run periodically or continuously in the background.
+ *
+ * @param url - The url that points directly to the image
+ * @param type - The type of image to return (jpeg for static and gif for animated)
+ * @returns Promise string that has the base64 encoded image
+ *
+ * @example
+ * // Getting encoded spotify image data
+ * const encodedImage = deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
+ *
+ * deskThing.sendMessageToAllClients({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
+ */
+    encodeImageFromUrl(url_1) {
+        return __awaiter(this, arguments, void 0, function* (url, type = 'jpeg') {
+            try {
+                console.log(`Fetching ${type} data...`);
+                const response = yield fetch(url);
+                const arrayBuffer = yield response.arrayBuffer();
+                const base64String = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+                const imgData = `data:image/${type};base64,${base64String}`;
+                console.log(`Sending ${type} data`);
+                return imgData;
+            }
+            catch (error) {
+                console.error(`Error fetching ${type}:`, error);
+                throw error;
+            }
+        });
+    }
+    /**
      * Deskthing Server Functions
+     */
+    /**
+     * Load the manifest file and saves it locally
+     * This method is typically used internally to load configuration data.
+     *
+     * @example
+     * deskThing.loadManifest();
      */
     loadManifest() {
         const manifestPath = path.resolve(__dirname, './manifest.json');
@@ -292,9 +651,18 @@ class DeskThing {
             console.error('Failed to load manifest:', error);
         }
     }
+    /**
+    * Returns the manifest in a Response structure
+    * If the manifest is not found or fails to load, it returns a 500 status code.
+    * It will attempt to read the manifest from file if the manifest does not exist in cache
+    *
+    * @example
+    * const manifest = deskThing.getManifest();
+    * console.log(manifest);
+    */
     getManifest() {
         if (!this.manifest) {
-            console.log('Manifest Not Found - trying to load manually...');
+            console.warn('Manifest Not Found - trying to load manually...');
             this.loadManifest();
             if (!this.manifest) {
                 return {
@@ -305,7 +673,7 @@ class DeskThing {
                 };
             }
             else {
-                console.log('Manifest loaded!');
+                //console.log('Manifest loaded!') 
             }
         }
         return {
@@ -319,40 +687,50 @@ class DeskThing {
         return __awaiter(this, arguments, void 0, function* ({ toServer, SysEvents }) {
             this.toServer = toServer;
             this.SysEvents = SysEvents;
-            yield this.initializeData();
+            this.stopRequested = false;
             try {
                 yield this.notifyListeners('start');
             }
             catch (error) {
                 console.error('Error in start:', error);
                 return {
-                    data: { message: `Error in start: ${error}` },
+                    data: { message: `Error starting the app: ${error}` },
                     status: 500,
                     statusText: 'Internal Server Error',
                     request: []
                 };
             }
             return {
-                data: { message: 'App started successfully!' },
+                data: { message: 'Started successfully!' },
                 status: 200,
                 statusText: 'OK',
                 request: []
             };
         });
     }
+    /**
+     * Stops background tasks, clears data, notifies listeners, and returns a response. This is used by the server to kill the program. Emits 'stop' event.
+     *
+     * @returns A promise that resolves with a response object.
+     *
+     * @example
+     * const response = await deskThing.stop();
+     * console.log(response.statusText);
+     */
     stop() {
         return __awaiter(this, void 0, void 0, function* () {
             try {
+                if (this.data) {
+                    this.sendData('set', this.data);
+                }
                 // Notify listeners of the stop event
                 yield this.notifyListeners('stop');
                 // Set flag to indicate stop request
                 this.stopRequested = true;
                 // Stop all background tasks
                 this.backgroundTasks.forEach(cancel => cancel());
-                this.sendLog('Background tasks stopped');
-                // Clear cached data
-                this.clearCache();
-                this.sendLog('Cache cleared');
+                this.backgroundTasks = [];
+                this.sendLog('Background tasks stopped and removed');
             }
             catch (error) {
                 console.error('Error in stop:', error);
@@ -371,10 +749,40 @@ class DeskThing {
             };
         });
     }
+    purge() {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                // Notify listeners of the stop event
+                yield this.notifyListeners('purge');
+                // Set flag to indicate stop request
+                this.stopRequested = true;
+                // Stop all background tasks
+                this.backgroundTasks.forEach(cancel => cancel());
+                this.sendLog('Background tasks stopped');
+                // Clear cached data
+                this.clearCache();
+                this.sendLog('Cache cleared');
+            }
+            catch (error) {
+                console.error('Error in Purge:', error);
+                return {
+                    data: { message: `Error in Purge: ${error}` },
+                    status: 500,
+                    statusText: 'Internal Server Error',
+                    request: []
+                };
+            }
+            return {
+                data: { message: 'App purged successfully!' },
+                status: 200,
+                statusText: 'OK',
+                request: []
+            };
+        });
+    }
     // Method to clear cached data
     clearCache() {
-        this.data = {};
-        this.settings = {};
+        this.data = null;
         this.Listeners = {};
         this.manifest = null;
         this.SysEvents = null;
@@ -385,26 +793,28 @@ class DeskThing {
         this.sendLog('Cache cleared');
         this.toServer = null;
     }
-    toClient(channel, ...args) {
-        if (channel === 'data' && args.length > 0) {
-            const [data] = args; // Extract the first argument as data
-            if (typeof data === 'object' && data !== null) {
-                this.saveData(data);
+    toClient(data) {
+        if (data.type === 'data' && data) {
+            const payload = data.payload; // Extract the first argument as data
+            if (typeof payload === 'object' && data !== null) {
+                this.saveData(payload);
             }
             else {
-                console.warn('Received invalid data from server:', data);
-                this.sendLog('Received invalid data from server:' + data);
+                console.warn('Received invalid data from server:', payload);
+                this.sendLog('Received invalid data from server:' + payload);
+                this.initializeData();
             }
         }
-        else if (channel === 'message') {
-            this.sendLog('Received message from server:' + args[0]);
+        else if (data.type === 'message') {
+            this.sendLog('Received message from server:' + data.payload);
         }
-        else if (channel === 'set' && args[0] == 'settings' && args[1]) {
-            const { id, value } = args[1];
-            if (this.settings[id]) {
-                this.sendLog(`Setting with label "${id}" changing from ${this.settings[id].value} to ${value}`);
-                this.settings[id].value = value;
-                this.sendData('add', { settings: this.settings });
+        else if (data.type === 'set' && data.request === 'settings' && data.payload) {
+            const { id, value } = data.payload;
+            if (this.data && this.data.settings && this.data.settings[id]) {
+                this.sendLog(`Setting with label "${id}" changing from ${this.data.settings[id].value} to ${value}`);
+                this.data.settings[id].value = value;
+                this.sendData('add', { settings: this.data.settings });
+                this.notifyListeners('settings', this.data.settings);
                 this.notifyListeners('data', this.data);
             }
             else {
@@ -412,7 +822,7 @@ class DeskThing {
             }
         }
         else {
-            this.notifyListeners(channel, ...args);
+            this.notifyListeners(data.type, data);
         }
     }
 }

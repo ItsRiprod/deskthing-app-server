@@ -1,10 +1,12 @@
 {
   "name": "deskthing-server",
-  "version": "0.0.4",
+  "version": "0.7.5",
   "description": "The Deskthing connector for the server apps",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist/"],
+  "files": [
+    "dist/"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
