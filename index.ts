@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-
+import axios from 'axios'
 // Type definitions for various listeners, events, and data interfaces used in the class
 type DeskthingListener = (...args: any) => void
 
@@ -681,8 +681,7 @@ export class DeskThing {
     }
 
         /**
-     * Adds a background task that will loop until either the task is cancelled or the task function returns false.
-     * This is useful for tasks that need to run periodically or continuously in the background.
+     * Encodes an image from a URL and returns a Promise that resolves to a base64 encoded string.
      * 
      * @param url - The url that points directly to the image
      * @param type - The type of image to return (jpeg for static and gif for animated)
@@ -696,17 +695,15 @@ export class DeskThing {
      */
     async encodeImageFromUrl(url: string, type: 'jpeg' | 'gif' = 'jpeg'): Promise<string> {
         try {
-          console.log(`Fetching ${type} data...`);
-          const response = await fetch(url);
-          const arrayBuffer = await response.arrayBuffer();
-          const base64String = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-          const imgData = `data:image/${type};base64,${base64String}`;
-          console.log(`Sending ${type} data`);
-          return imgData;
-        } catch (error) {
-          console.error(`Error fetching ${type}:`, error);
-          throw error;
-        }
+            console.log(`Fetching ${type} data...`)
+            const response = await axios.get(url, { responseType: 'arraybuffer' })
+            const imgData = `data:image/${type};base64,${Buffer.from(response.data).toString('base64')}`
+            console.log(`Sending ${type} data`)
+            return imgData
+          } catch (error) {
+            console.error(`Error fetching ${type}:`, error)
+            throw error
+          }
     }
 
     /**

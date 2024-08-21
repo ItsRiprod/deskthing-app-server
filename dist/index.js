@@ -31,10 +31,14 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DeskThing = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const axios_1 = __importDefault(require("axios"));
 class DeskThing {
     constructor() {
         this.Listeners = {};
@@ -618,10 +622,8 @@ class DeskThing {
         return __awaiter(this, arguments, void 0, function* (url, type = 'jpeg') {
             try {
                 console.log(`Fetching ${type} data...`);
-                const response = yield fetch(url);
-                const arrayBuffer = yield response.arrayBuffer();
-                const base64String = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-                const imgData = `data:image/${type};base64,${base64String}`;
+                const response = yield axios_1.default.get(url, { responseType: 'arraybuffer' });
+                const imgData = `data:image/${type};base64,${Buffer.from(response.data).toString('base64')}`;
                 console.log(`Sending ${type} data`);
                 return imgData;
             }
