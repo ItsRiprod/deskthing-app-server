@@ -154,12 +154,20 @@ export class DeskThing {
     /**
      * Registers an event listener for a specific incoming event.
      * 
-     * @param event - The event to listen for.
+     * @param event - The event type to listen for.
      * @param callback - The function to call when the event occurs.
      * @returns A function to remove the listener.
      * 
      * @example
      * const removeListener = deskThing.on('data', (data) => console.log(data));
+     * removeListener(); // To remove the listener
+     * @example
+     * // When {type: 'get'} is received from the server
+     * const removeListener = deskThing.on('get', (socketData) => console.log(socketData.payload));
+     * removeListener(); // To remove the listener
+     * @example
+     * // When a setting is updated. Passes the updated settings object
+     * const removeListener = deskThing.on('settings', (settings) => console.log(settings.some_setting.value));
      * removeListener(); // To remove the listener
      */
     on(event: IncomingEvent, callback: DeskthingListener): () => void {
