@@ -78,7 +78,15 @@ type startData = {
     SysEvents: SysEvents
 }
 
-type Response = {
+export type Action = {
+    name: string,
+    id: string,
+    description: string,
+    flair: string
+
+}
+
+export type Response = {
     data: any
     status: number
     statusText: string
@@ -107,6 +115,9 @@ export class DeskThing {
      * 
      * @example
      * const deskThing = DeskThing.getInstance();
+     * deskthing.on('start', () => {
+     *   // Your code here
+     * });
      */
     static getInstance(): DeskThing {
         if (!this.instance) {
@@ -152,7 +163,7 @@ export class DeskThing {
     }
 
     /**
-     * Registers an event listener for a specific incoming event.
+     * Registers an event listener for a specific incoming event. Events are either the "type" value of the incoming SocketData object or a special event like "start", "stop", or "data".
      * 
      * @param event - The event type to listen for.
      * @param callback - The function to call when the event occurs.
@@ -160,6 +171,9 @@ export class DeskThing {
      * 
      * @example
      * const removeListener = deskThing.on('data', (data) => console.log(data));
+     * removeListener(); // To remove the listener
+     * @example
+     * const removeListener = deskThing.on('start', () => console.log('App is starting));
      * removeListener(); // To remove the listener
      * @example
      * // When {type: 'get'} is received from the server
@@ -186,7 +200,9 @@ export class DeskThing {
      * @param callback - The listener function to remove.
      * 
      * @example
-     * deskThing.off('data', dataListener);
+     * const dataListener = () => console.log('Data received');
+     * deskthing.on('data', dataListener);
+     * deskthing.off('data', dataListener);
      */
     off(event: IncomingEvent, callback: DeskthingListener): void {
         if (!this.Listeners[event]) {
@@ -197,7 +213,7 @@ export class DeskThing {
 
     /**
      * Registers a system event listener. This feature is somewhat limited but allows for detecting when there are new audiosources or button mappings registered to the server.
-     * 
+     * Eg 'config' is emitted when the server has new button mappings or audio sources registered.
      * @param event - The system event to listen for.
      * @param listener - The function to call when the event occurs.
      * @returns A function to remove the listener.
@@ -230,6 +246,10 @@ export class DeskThing {
      * 
      * @example
      * deskThing.once('data').then(data => console.log('Received data:', data));
+     * @example
+     * await deskThing.once('flagType');
+     * @example
+     * await deskThing.once('flagType', someFunction);
      */
     async once(event: IncomingEvent, callback?: DeskthingListener): Promise<any> {
         if (callback) {
@@ -299,6 +319,10 @@ export class DeskThing {
      * 
      * @example
      * deskThing.send('message', 'Hello, Server!');
+     * @example
+     * deskThing.send('log', 'Hello, Server!');
+     * @example
+     * deskThing.send('data', {type: 'songData', payload: musicData });
      */
     send(event: OutgoingEvent, payload: any, request?:string): void {
         this.sendData(event, payload, request)
@@ -342,19 +366,22 @@ export class DeskThing {
 
     /**
      * Routes request to another app running on the server.
+     * Ensure that the app you are requesting data from is in your dependency array!
      * 
      * @param appId - The ID of the target app.
      * @param data - The data to send to the target app.
      * 
      * @example
      * deskThing.sendDataToOtherApp('utility', { type: 'set', request: 'next', payload: { id: '' } });
+     * @example
+     * deskThing.sendDataToOtherApp('spotify', { type: 'get', request: 'music' });
      */
     sendDataToOtherApp(appId: string, payload: OutgoingData): void {
         this.send('toApp', payload, appId)
     }
 
     /**
-     * Sends structured data to the client through the server. This will be received by the webapp client. "app" defaults to the current app.
+     * Sends structured data to the client through the server. This will be received by the webapp client. The "app" field defaults to the current app.
      * 
      * @param data - The structured data to send to the client, including app, type, request, and data.
      * 
@@ -364,6 +391,16 @@ export class DeskThing {
      *   type: 'set',
      *   request: 'next',
      *   data: { key: 'value' }
+     * });
+     * @example
+     * deskThing.sendDataToClient({
+     *   type: 'songData',
+     *   data: songData
+     * });
+     * @example
+     * deskThing.sendDataToClient({
+     *   type: 'callStatus',
+     *   data: callData
      * });
      */
     sendDataToClient(data: SocketData): void {
@@ -449,16 +486,21 @@ export class DeskThing {
      * 
      * @example
      * deskThing.getConfig('myConfig');
+     * @example
+     * const someValue = await deskThing.getConfig('superSpecificConfig');
+     * console.log('Some value:', someValue);
      */
     async getConfig(name: string) {
+        // Request config data from the server
         this.requestData('config', name)
 
+        // Race between the data being received and a timeout
         return await Promise.race([
             this.once('config'),
             new Promise((resolve) => setTimeout(() => {
                             resolve(null)
                             this.sendLog(`Failed to fetch config: ${name}`)
-                        }, 5000)) // Adjust timeout as needed
+                        }, 5000))
         ]);
     }
 
@@ -497,9 +539,10 @@ export class DeskThing {
      * deskThing.getUserInput(
      *   { 
      *     username: { instructions: 'Enter your username', label: 'Username' },
-     *     password: { instructions: 'Enter your password', label: 'Password' }
+     *     password: { instructions: 'Enter your password', label: 'Password' },
+     *     status: { instructions: 'Enter status', label: 'Status', value: 'active' }
      *   }, 
-     *   (response) => console.log('User input received:', response.username, response.password)
+     *   (response) => console.log('User input received:', response.username, response.password, response.status)
      * );
      */
     async getUserInput(scopes: AuthScopes, callback: DeskthingListener): Promise<void> {
@@ -537,7 +580,6 @@ export class DeskThing {
      *   { label: 'On', value: true },
      *   { label: 'Off', value: false }
      * ])
-     * 
      * @example
      * // Adding a string setting with multiple options
      * deskThing.addSetting('theme', 'Theme', 'light', [
@@ -584,20 +626,76 @@ export class DeskThing {
      * @param id - The unique identifier for the action. This is what will be used when it is triggered
      * @param description - A description of the action.
      * @param flair - Optional flair for the action (default is an empty string).
+     * 
+     * @example
+     * deskthing.addAction('Print Hello', 'printHello', 'Prints Hello to the console', '')
+     * deskthing.on('button', (data) => {
+     *      if (data.payload.id === 'printHello') {
+     *          console.log('Hello')
+     *      }
+     * })
      */
       registerAction(name: string, id: string, description: string, flair: string = ''): void {
           this.sendData('action', { name, id, description, flair }, 'add')
+      }
+      
+      /**
+     * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
+     * 
+     * @param action - The action object to register.
+     * @throws {Error} If the action object is invalid.
+     * @example
+     * const action = {
+     *      name: 'Print Hello',
+     *      id: 'printHello',
+     *      description: 'Prints Hello to the console',
+     *      flair: ''
+     * }
+     * deskthing.addActionObject(action)
+     * deskthing.on('button', (data) => {
+     *      if (data.payload.id === 'printHello') {
+     *          console.log('Hello')
+     *      }
+     * })
+     */
+      registerActionObject(action: Action): void {
+        
+        if (!action || typeof action !== 'object') {
+            throw new Error('Invalid action object');
+        }
+
+        if (!action.name || typeof action.name !== 'string') {
+            throw new Error('Action must have a valid name');
+        }
+
+        if (!action.id || typeof action.id !== 'string') {
+            throw new Error('Action must have a valid id');
+        }
+
+        if (!action.description || typeof action.description !== 'string') {
+            throw new Error('Action must have a valid description');
+        }
+
+        if (action.flair !== undefined && typeof action.flair !== 'string') {
+            throw new Error('Action flair must be a string if provided');
+        }
+
+        this.sendData('action', action, 'add')
+
       }
 
       /**
      * Registers a new key with the specified identifier. This can be mapped to any action. Use a keycode to map a specific keybind.
      * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code
+     * 
+     * Keys can also be considered "digital" like buttons on the screen.
      * The first number in the key will be passed to the action (e.g. customAction13 with action SwitchView will switch to the 13th view )
      * 
      * @param id - The unique identifier for the key.
+     * @param description - Description for the key.
      */
-      registerKey(id: string): void {
-          this.sendData('button', { id }, 'add')
+      registerKey(id: string, description: string): void {
+          this.sendData('button', { id, description }, 'add')
       }
 
       /**
@@ -691,27 +789,54 @@ export class DeskThing {
         /**
      * Encodes an image from a URL and returns a Promise that resolves to a base64 encoded string.
      * 
+     * 
      * @param url - The url that points directly to the image
      * @param type - The type of image to return (jpeg for static and gif for animated)
+     * @param retries - The number of times to retry the request in case of failure. Defaults to 3.
      * @returns Promise string that has the base64 encoded image
      * 
      * @example
      * // Getting encoded spotify image data
-     * const encodedImage = deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
+     * const encodedImage = await deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
      * 
      * deskThing.sendMessageToAllClients({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
      */
-    async encodeImageFromUrl(url: string, type: 'jpeg' | 'gif' = 'jpeg'): Promise<string> {
+    async encodeImageFromUrl(url: string, type: 'jpeg' | 'gif' = 'jpeg', retries = 3): Promise<string> {
         try {
             console.log(`Fetching ${type} data...`)
-            const response = await axios.get(url, { responseType: 'arraybuffer' })
-            const imgData = `data:image/${type};base64,${Buffer.from(response.data).toString('base64')}`
-            console.log(`Sending ${type} data`)
-            return imgData
-          } catch (error) {
+            const response = await axios({
+                method: 'get',
+                url,
+                responseType: 'stream'
+            })
+            
+            let data: Buffer[] = []
+            response.data.on('data', (chunk: Buffer) => {
+                data.push(chunk)
+            })
+            
+            return new Promise((resolve, reject) => {
+                response.data.on('end', () => {
+                    const bufferData = Buffer.concat(data); // Combine all the buffer chunks
+                    const imgData = `data:image/${type};base64,${bufferData.toString('base64')}`;
+                    console.log(`Sending ${type} data`);
+                    resolve(imgData);
+                })
+            
+                response.data.on('error', (error: any) => {
+                    console.error(`Error fetching ${type}:`, error)
+                    if (retries > 0) {
+                        console.warn(`Retrying... (${retries} attempts left)`)
+                        resolve(this.encodeImageFromUrl(url, type, retries - 1))
+                    } else {
+                        reject(error)
+                    }
+                })
+            })
+        } catch (error) {
             console.error(`Error fetching ${type}:`, error)
             throw error
-          }
+        }
     }
 
     /**
@@ -723,7 +848,7 @@ export class DeskThing {
      * This method is typically used internally to load configuration data.
      * 
      * @example
-     * deskThing.loadManifest();
+     * const manifest = deskThing.loadManifest();
      */
     private loadManifest(): void {
         const manifestPath = path.resolve(__dirname, './manifest.json');
@@ -739,6 +864,8 @@ export class DeskThing {
      * Returns the manifest in a Response structure
      * If the manifest is not found or fails to load, it returns a 500 status code.
      * It will attempt to read the manifest from file if the manifest does not exist in cache
+     * 
+     * !! This method is not intended for use in client code.
      * 
      * @example
      * const manifest = deskThing.getManifest();
@@ -768,6 +895,12 @@ export class DeskThing {
         };
     }
 
+    /**
+     * Starts the deskthing.
+     * !! This method is not intended for use in client code.
+     * @param param0 
+     * @returns 
+     */
     async start({ toServer, SysEvents }: startData): Promise<Response> {
         this.toServer = toServer
         this.SysEvents = SysEvents
@@ -795,6 +928,8 @@ export class DeskThing {
 
     /**
      * Stops background tasks, clears data, notifies listeners, and returns a response. This is used by the server to kill the program. Emits 'stop' event.
+     * 
+     * !! This method is not intended for use in client code.
      * 
      * @returns A promise that resolves with a response object.
      * 
@@ -851,7 +986,6 @@ export class DeskThing {
             // Clear cached data
             this.clearCache();
             this.sendLog('Cache cleared');
-
         } catch (error) {
             console.error('Error in Purge:', error);
             return {
