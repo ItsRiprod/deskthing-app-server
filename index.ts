@@ -10,6 +10,29 @@ export type IncomingEvent = 'message' | 'data' | 'get' | 'set' | 'callback-data'
 // Events that can be sent back to the server
 export type OutgoingEvent = 'message' | 'data' | 'get' | 'set' | 'add' | 'open' | 'toApp' | 'error' | 'log' | 'action' | 'button'
 
+export type SongData = {
+    album: string | null
+    artist: string | null
+    playlist: string | null
+    playlist_id: string | null
+    track_name: string
+    shuffle_state: boolean | null
+    repeat_state: 'off' | 'all' | 'track' 
+    is_playing: boolean
+    can_fast_forward: boolean
+    can_skip: boolean
+    can_like: boolean
+    can_change_volume: boolean
+    can_set_output: boolean 
+    track_duration: number | null
+    track_progress: number | null
+    volume: number 
+    thumbnail: string | null 
+    device: string | null 
+    id: string | null 
+    device_id: string | null 
+  }
+
 // Sub-types for the 'get' event
 export type GetTypes = 'data' | 'config' | 'input'
 export interface Manifest {
@@ -53,10 +76,10 @@ export interface SocketData {
     app?: string;
     type: string;
     request?: string;
-    payload?: Array<string> | string | object | number | { [key: string]: string | Array<string> };
+    payload?: Array<string> | string | object | number | { [key: string]: string | Array<string> } | ActionCallback;
 }
 export interface DataInterface {
-    [key: string]: string | Settings | undefined
+    [key: string]: string | Settings | undefined | any[]
     settings?: Settings
 }
 export type OutgoingData = {
@@ -83,7 +106,10 @@ export type Action = {
     id: string,
     description: string,
     flair: string
-
+}
+export type ActionCallback = {
+    id: string,
+    value: number
 }
 
 export type Response = {
@@ -682,6 +708,19 @@ export class DeskThing {
 
         this.sendData('action', action, 'add')
 
+      }
+
+      /**
+       * Updates the flair of a specified action id. This can be used to update the image of the button. Flair is appended to the end of the action name and thus the end of the SVG path as well
+       * @param id action id
+       * @param flair the updated flair
+       * @example
+       * // Previously using like.svg
+       * deskthing.updateFlair('like', 'active')
+       * // Now using likeactive.svg
+       */
+      updateFlair(id: string, flair: string): void {
+        this.sendData('action', { id, flair }, 'update')
       }
 
       /**

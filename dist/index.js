@@ -608,6 +608,18 @@ class DeskThing {
         this.sendData('action', action, 'add');
     }
     /**
+     * Updates the flair of a specified action id. This can be used to update the image of the button. Flair is appended to the end of the action name and thus the end of the SVG path as well
+     * @param id action id
+     * @param flair the updated flair
+     * @example
+     * // Previously using like.svg
+     * deskthing.updateFlair('like', 'active')
+     * // Now using likeactive.svg
+     */
+    updateFlair(id, flair) {
+        this.sendData('action', { id, flair }, 'update');
+    }
+    /**
    * Registers a new key with the specified identifier. This can be mapped to any action. Use a keycode to map a specific keybind.
    * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code
    *
@@ -705,7 +717,7 @@ class DeskThing {
  *
  * @example
  * // Getting encoded spotify image data
- * const encodedImage = deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
+ * const encodedImage = await deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
  *
  * deskThing.sendMessageToAllClients({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
  */

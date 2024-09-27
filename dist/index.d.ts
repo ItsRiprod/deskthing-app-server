@@ -1,6 +1,28 @@
 type DeskthingListener = (...args: any) => void;
 export type IncomingEvent = 'message' | 'data' | 'get' | 'set' | 'callback-data' | 'start' | 'stop' | 'purge' | 'input' | 'action' | 'config' | 'settings';
 export type OutgoingEvent = 'message' | 'data' | 'get' | 'set' | 'add' | 'open' | 'toApp' | 'error' | 'log' | 'action' | 'button';
+export type SongData = {
+    album: string | null;
+    artist: string | null;
+    playlist: string | null;
+    playlist_id: string | null;
+    track_name: string;
+    shuffle_state: boolean | null;
+    repeat_state: 'off' | 'all' | 'track';
+    is_playing: boolean;
+    can_fast_forward: boolean;
+    can_skip: boolean;
+    can_like: boolean;
+    can_change_volume: boolean;
+    can_set_output: boolean;
+    track_duration: number | null;
+    track_progress: number | null;
+    volume: number;
+    thumbnail: string | null;
+    device: string | null;
+    id: string | null;
+    device_id: string | null;
+};
 export type GetTypes = 'data' | 'config' | 'input';
 export interface Manifest {
     type: string[];
@@ -42,7 +64,7 @@ export interface SocketData {
     request?: string;
     payload?: Array<string> | string | object | number | {
         [key: string]: string | Array<string>;
-    };
+    } | ActionCallback;
 }
 export interface DataInterface {
     [key: string]: string | Settings | undefined;
@@ -69,6 +91,10 @@ export type Action = {
     id: string;
     description: string;
     flair: string;
+};
+export type ActionCallback = {
+    id: string;
+    value: number;
 };
 export type Response = {
     data: any;
@@ -400,6 +426,16 @@ export declare class DeskThing {
    */
     registerActionObject(action: Action): void;
     /**
+     * Updates the flair of a specified action id. This can be used to update the image of the button. Flair is appended to the end of the action name and thus the end of the SVG path as well
+     * @param id action id
+     * @param flair the updated flair
+     * @example
+     * // Previously using like.svg
+     * deskthing.updateFlair('like', 'active')
+     * // Now using likeactive.svg
+     */
+    updateFlair(id: string, flair: string): void;
+    /**
    * Registers a new key with the specified identifier. This can be mapped to any action. Use a keycode to map a specific keybind.
    * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code
    *
@@ -471,7 +507,7 @@ export declare class DeskThing {
  *
  * @example
  * // Getting encoded spotify image data
- * const encodedImage = deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
+ * const encodedImage = await deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
  *
  * deskThing.sendMessageToAllClients({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
  */
