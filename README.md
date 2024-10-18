@@ -58,7 +58,8 @@ Ensure you have a manifest in your build directory!
   "isLocalApp": false,
   "requires": [],
   "label": "Testing App",
-  "version": "v0.8.0",
+  "version": "v0.9.0",
+  "version_code": 900,
   "description": "This is some description for the app",
   "author": "Riprod",
   "platforms": [
