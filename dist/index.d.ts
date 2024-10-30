@@ -1,6 +1,6 @@
 type DeskthingListener = (...args: any) => void;
-export type IncomingEvent = 'message' | 'data' | 'get' | 'set' | 'callback-data' | 'start' | 'stop' | 'purge' | 'input' | 'action' | 'config' | 'settings';
-export type OutgoingEvent = 'message' | 'data' | 'get' | 'set' | 'add' | 'open' | 'toApp' | 'error' | 'log' | 'action' | 'button';
+export type IncomingEvent = "message" | "data" | "get" | "set" | "callback-data" | "start" | "stop" | "purge" | "input" | "action" | "config" | "settings";
+export type OutgoingEvent = "message" | "data" | "get" | "set" | "add" | "open" | "toApp" | "error" | "log" | "action" | "button";
 export type SongData = {
     album: string | null;
     artist: string | null;
@@ -8,7 +8,7 @@ export type SongData = {
     playlist_id: string | null;
     track_name: string;
     shuffle_state: boolean | null;
-    repeat_state: 'off' | 'all' | 'track';
+    repeat_state: "off" | "all" | "track";
     is_playing: boolean;
     can_fast_forward: boolean;
     can_skip: boolean;
@@ -23,7 +23,7 @@ export type SongData = {
     id: string | null;
     device_id: string | null;
 };
-export type GetTypes = 'data' | 'config' | 'input';
+export type GetTypes = "data" | "config" | "input";
 export interface Manifest {
     type: string[];
     requires: Array<string>;
@@ -45,15 +45,49 @@ export interface AuthScopes {
         value?: string;
     };
 }
-export interface Settings {
-    [key: string]: {
-        value: string | boolean;
+export interface SettingsNumber {
+    value: number;
+    type: 'number';
+    min: number;
+    max: number;
+    label: string;
+    description?: string;
+}
+export interface SettingsBoolean {
+    value: boolean;
+    type: 'boolean';
+    label: string;
+    description?: string;
+}
+export interface SettingsString {
+    value: string;
+    type: 'string';
+    label: string;
+    description?: string;
+}
+export interface SettingsSelect {
+    value: string;
+    type: 'select';
+    label: string;
+    description?: string;
+    options: {
         label: string;
-        options: {
-            label: string;
-            value: string | boolean;
-        }[];
-    };
+        value: string;
+    }[];
+}
+export interface SettingsMultiSelect {
+    value: string[];
+    type: 'multiselect';
+    label: string;
+    description?: string;
+    options: {
+        label: string;
+        value: string;
+    }[];
+}
+export type SettingsType = SettingsNumber | SettingsBoolean | SettingsString | SettingsSelect | SettingsMultiSelect;
+export interface AppSettings {
+    [key: string]: SettingsType;
 }
 export interface InputResponse {
     [key: string]: string | boolean;
@@ -67,8 +101,8 @@ export interface SocketData {
     } | ActionCallback;
 }
 export interface DataInterface {
-    [key: string]: string | Settings | undefined;
-    settings?: Settings;
+    [key: string]: string | AppSettings | undefined | any[];
+    settings?: AppSettings;
 }
 export type OutgoingData = {
     type: OutgoingEvent;
@@ -86,15 +120,44 @@ type startData = {
     toServer: toServer;
     SysEvents: SysEvents;
 };
+type valueTypes = string | number | boolean;
+export declare enum EventFlavor {
+    KeyUp = 0,
+    KeyDown = 1,
+    ScrollUp = 2,
+    ScrollDown = 3,
+    ScrollLeft = 4,
+    ScrollRight = 5,
+    SwipeUp = 6,
+    SwipeDown = 7,
+    SwipeLeft = 8,
+    SwipeRight = 9,
+    PressShort = 10,
+    PressLong = 11
+}
 export type Action = {
-    name: string;
+    name?: string;
+    description?: string;
     id: string;
-    description: string;
-    flair: string;
+    value?: valueTypes;
+    value_options?: valueTypes[];
+    value_instructions?: string;
+    icon?: string;
+    source: string;
+    version: string;
+    enabled: boolean;
+};
+export type Key = {
+    id: string;
+    source: string;
+    description?: string;
+    version: string;
+    enabled: boolean;
+    flavors: EventFlavor[];
 };
 export type ActionCallback = {
     id: string;
-    value: number;
+    value: valueTypes;
 };
 export type Response = {
     data: any;
@@ -346,14 +409,14 @@ export declare class DeskThing {
      * const settings = deskThing.getSettings();
      * console.log('Current settings:', settings);
      */
-    getSettings(): Promise<Settings | null>;
+    getSettings(): Promise<AppSettings | null>;
     /**
      * Requests user input for the specified scopes and triggers the provided callback with the input response.
      * Commonly used for settings keys, secrets, and other user-specific data. Callback data will be a json object with keys matching the scope ids and values of the answers.
      *
      * @param scopes - The scopes to request input for, defining the type and details of the input needed.
      * @param callback - The function to call with the input response once received.
-     *
+     * @deprecated This will be removed in future release and replaced with tasks.
      * @example
      * deskThing.getUserInput(
      *   {
@@ -375,55 +438,103 @@ export declare class DeskThing {
      *
      * @example
      * // Adding a boolean setting
-     * deskThing.addSetting('darkMode', 'Dark Mode', false, [
-     *   { label: 'On', value: true },
-     *   { label: 'Off', value: false }
-     * ])
+     * deskThing.addSettings({
+     *   darkMode: {
+     *     type: 'boolean',
+     *     label: 'Dark Mode',
+     *     value: false,
+     *     description: 'Enable dark mode theme'
+     *   }
+     * })
      * @example
-     * // Adding a string setting with multiple options
-     * deskThing.addSetting('theme', 'Theme', 'light', [
-     *   { label: 'Light', value: 'light' },
-     *   { label: 'Dark', value: 'dark' },
-     *   { label: 'System', value: 'system' }
-     * ])
+     * // Adding a select setting
+     * deskThing.addSettings({
+     *   theme: {
+     *     type: 'select',
+     *     label: 'Theme',
+     *     value: 'light',
+     *     description: 'Choose your theme',
+     *     options: [
+     *       { label: 'Light', value: 'light' },
+     *       { label: 'Dark', value: 'dark' },
+     *       { label: 'System', value: 'system' }
+     *     ]
+     *   }
+     * })
+     * @example
+     * // Adding a multiselect setting
+     * deskThing.addSettings({
+     *   notifications: {
+     *     type: 'multiselect',
+     *     label: 'Notifications',
+     *     value: ['email'],
+     *     description: 'Choose notification methods',
+     *     options: [
+     *       { label: 'Email', value: 'email' },
+     *       { label: 'SMS', value: 'sms' },
+     *       { label: 'Push', value: 'push' }
+     *     ]
+     *   }
+     * })
+     * @example
+     * // Adding a number setting
+     * deskThing.addSettings({
+     *   fontSize: {
+     *     type: 'number',
+     *     label: 'Font Size',
+     *     value: 16,
+     *     description: 'Set the font size in pixels',
+     *     min: 12,
+     *     max: 24
+     *   }
+     * })
+     * @example
+     * // Adding a string setting
+     * deskThing.addSettings({
+     *   username: {
+     *     type: 'string',
+     *     label: 'Username',
+     *     value: '',
+     *     description: 'Enter your username'
+     *   }
+     * })
      */
-    addSettings(settings: Settings): void;
-    /**
-   * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
-   *
-   * @param name - The name of the action.
-   * @param id - The unique identifier for the action. This is what will be used when it is triggered
-   * @param description - A description of the action.
-   * @param flair - Optional flair for the action (default is an empty string).
-   *
-   * @example
-   * deskthing.addAction('Print Hello', 'printHello', 'Prints Hello to the console', '')
-   * deskthing.on('button', (data) => {
-   *      if (data.payload.id === 'printHello') {
-   *          console.log('Hello')
-   *      }
-   * })
-   */
+    addSettings(settings: AppSettings): void; /**
+     * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
+     *
+     * @param name - The name of the action.
+     * @param id - The unique identifier for the action. This is what will be used when it is triggered
+     * @param description - A description of the action.
+     * @param flair - Optional flair for the action (default is an empty string).
+     *
+     * @example
+     * deskthing.addAction('Print Hello', 'printHello', 'Prints Hello to the console', '')
+     * deskthing.on('button', (data) => {
+     *      if (data.payload.id === 'printHello') {
+     *          console.log('Hello')
+     *      }
+     * })
+     */
     registerAction(name: string, id: string, description: string, flair?: string): void;
     /**
-   * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
-   *
-   * @param action - The action object to register.
-   * @throws {Error} If the action object is invalid.
-   * @example
-   * const action = {
-   *      name: 'Print Hello',
-   *      id: 'printHello',
-   *      description: 'Prints Hello to the console',
-   *      flair: ''
-   * }
-   * deskthing.addActionObject(action)
-   * deskthing.on('button', (data) => {
-   *      if (data.payload.id === 'printHello') {
-   *          console.log('Hello')
-   *      }
-   * })
-   */
+     * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
+     *
+     * @param action - The action object to register.
+     * @throws {Error} If the action object is invalid.
+     * @example
+     * const action = {
+     *      name: 'Print Hello',
+     *      id: 'printHello',
+     *      description: 'Prints Hello to the console',
+     *      flair: ''
+     * }
+     * deskthing.addActionObject(action)
+     * deskthing.on('button', (data) => {
+     *      if (data.payload.id === 'printHello') {
+     *          console.log('Hello')
+     *      }
+     * })
+     */
     registerActionObject(action: Action): void;
     /**
      * Updates the flair of a specified action id. This can be used to update the image of the button. Flair is appended to the end of the action name and thus the end of the SVG path as well
@@ -434,36 +545,44 @@ export declare class DeskThing {
      * deskthing.updateFlair('like', 'active')
      * // Now using likeactive.svg
      */
-    updateFlair(id: string, flair: string): void;
+    updateIcon(id: string, icon: string): void;
     /**
-   * Registers a new key with the specified identifier. This can be mapped to any action. Use a keycode to map a specific keybind.
-   * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code
-   *
-   * Keys can also be considered "digital" like buttons on the screen.
-   * The first number in the key will be passed to the action (e.g. customAction13 with action SwitchView will switch to the 13th view )
-   *
-   * @param id - The unique identifier for the key.
-   * @param description - Description for the key.
-   */
-    registerKey(id: string, description: string): void;
+     * Registers a new key with the specified identifier. This can be mapped to any action. Use a keycode to map a specific keybind.
+     * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code
+     *
+     * Keys can also be considered "digital" like buttons on the screen.
+     * The first number in the key will be passed to the action (e.g. customAction13 with action SwitchView will switch to the 13th view )
+     *
+     * @param id - The unique identifier for the key.
+     * @param description - Description for the key.
+     */
+    registerKey(id: string, description: string, flavors: EventFlavor[], version: string): void;
     /**
-   * Removes an action with the specified identifier.
-   *
-   * @param id - The unique identifier of the action to be removed.
-   */
+     * Registers a new key with the specified identifier. This can be mapped to any action. Use a keycode to map a specific keybind.
+     * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code
+     *
+     * Keys can also be considered "digital" like buttons on the screen.
+     * @param key - The key object to register.
+     */
+    registerKeyObject(key: Key): void;
+    /**
+     * Removes an action with the specified identifier.
+     *
+     * @param id - The unique identifier of the action to be removed.
+     */
     removeAction(id: string): void;
     /**
-   * Removes a key with the specified identifier.
-   *
-   * @param id - The unique identifier of the key to be removed.
-   */
+     * Removes a key with the specified identifier.
+     *
+     * @param id - The unique identifier of the key to be removed.
+     */
     removeKey(id: string): void;
     /**
-   * Saves the provided data by merging it with the existing data and updating settings.
-   * Sends the updated data to the server and notifies listeners.
-   *
-   * @param data - The data to be saved and merged with existing data.
-   */
+     * Saves the provided data by merging it with the existing data and updating settings.
+     * Sends the updated data to the server and notifies listeners.
+     *
+     * @param data - The data to be saved and merged with existing data.
+     */
     saveData(data: DataInterface): void;
     /**
      * Adds a background task that will loop until either the task is cancelled or the task function returns false.
@@ -497,21 +616,21 @@ export declare class DeskThing {
      */
     addBackgroundTaskLoop(task: () => Promise<boolean | void>): () => void;
     /**
- * Encodes an image from a URL and returns a Promise that resolves to a base64 encoded string.
- *
- *
- * @param url - The url that points directly to the image
- * @param type - The type of image to return (jpeg for static and gif for animated)
- * @param retries - The number of times to retry the request in case of failure. Defaults to 3.
- * @returns Promise string that has the base64 encoded image
- *
- * @example
- * // Getting encoded spotify image data
- * const encodedImage = await deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
- *
- * deskThing.sendMessageToAllClients({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
- */
-    encodeImageFromUrl(url: string, type?: 'jpeg' | 'gif', retries?: number): Promise<string>;
+     * Encodes an image from a URL and returns a Promise that resolves to a base64 encoded string.
+     *
+     *
+     * @param url - The url that points directly to the image
+     * @param type - The type of image to return (jpeg for static and gif for animated)
+     * @param retries - The number of times to retry the request in case of failure. Defaults to 3.
+     * @returns Promise string that has the base64 encoded image
+     *
+     * @example
+     * // Getting encoded spotify image data
+     * const encodedImage = await deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
+     *
+     * deskThing.sendMessageToAllClients({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
+     */
+    encodeImageFromUrl(url: string, type?: "jpeg" | "gif", retries?: number): Promise<string>;
     /**
      * Deskthing Server Functions
      */
@@ -524,16 +643,16 @@ export declare class DeskThing {
      */
     private loadManifest;
     /**
-    * Returns the manifest in a Response structure
-    * If the manifest is not found or fails to load, it returns a 500 status code.
-    * It will attempt to read the manifest from file if the manifest does not exist in cache
-    *
-    * !! This method is not intended for use in client code.
-    *
-    * @example
-    * const manifest = deskThing.getManifest();
-    * console.log(manifest);
-    */
+     * Returns the manifest in a Response structure
+     * If the manifest is not found or fails to load, it returns a 500 status code.
+     * It will attempt to read the manifest from file if the manifest does not exist in cache
+     *
+     * !! This method is not intended for use in client code.
+     *
+     * @example
+     * const manifest = deskThing.getManifest();
+     * console.log(manifest);
+     */
     getManifest(): Response;
     /**
      * Starts the deskthing.

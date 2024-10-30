@@ -35,10 +35,25 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DeskThing = void 0;
+exports.DeskThing = exports.EventFlavor = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const axios_1 = __importDefault(require("axios"));
+var EventFlavor;
+(function (EventFlavor) {
+    EventFlavor[EventFlavor["KeyUp"] = 0] = "KeyUp";
+    EventFlavor[EventFlavor["KeyDown"] = 1] = "KeyDown";
+    EventFlavor[EventFlavor["ScrollUp"] = 2] = "ScrollUp";
+    EventFlavor[EventFlavor["ScrollDown"] = 3] = "ScrollDown";
+    EventFlavor[EventFlavor["ScrollLeft"] = 4] = "ScrollLeft";
+    EventFlavor[EventFlavor["ScrollRight"] = 5] = "ScrollRight";
+    EventFlavor[EventFlavor["SwipeUp"] = 6] = "SwipeUp";
+    EventFlavor[EventFlavor["SwipeDown"] = 7] = "SwipeDown";
+    EventFlavor[EventFlavor["SwipeLeft"] = 8] = "SwipeLeft";
+    EventFlavor[EventFlavor["SwipeRight"] = 9] = "SwipeRight";
+    EventFlavor[EventFlavor["PressShort"] = 10] = "PressShort";
+    EventFlavor[EventFlavor["PressLong"] = 11] = "PressLong";
+})(EventFlavor || (exports.EventFlavor = EventFlavor = {}));
 class DeskThing {
     constructor() {
         this.Listeners = {};
@@ -82,13 +97,13 @@ class DeskThing {
                 if (!this.data.settings) {
                     this.data.settings = {};
                 }
-                this.sendData('set', this.data);
+                this.sendData("set", this.data);
             }
             else {
                 this.data = {
-                    settings: {}
+                    settings: {},
                 };
-                this.sendData('set', this.data);
+                this.sendData("set", this.data);
             }
         });
     }
@@ -103,7 +118,7 @@ class DeskThing {
         return __awaiter(this, void 0, void 0, function* () {
             const callbacks = this.Listeners[event];
             if (callbacks) {
-                callbacks.forEach(callback => callback(...args));
+                callbacks.forEach((callback) => callback(...args));
             }
         });
     }
@@ -151,7 +166,7 @@ class DeskThing {
         if (!this.Listeners[event]) {
             return;
         }
-        this.Listeners[event] = this.Listeners[event].filter(cb => cb !== callback);
+        this.Listeners[event] = this.Listeners[event].filter((cb) => cb !== callback);
     }
     /**
      * Registers a system event listener. This feature is somewhat limited but allows for detecting when there are new audiosources or button mappings registered to the server.
@@ -224,13 +239,13 @@ class DeskThing {
      */
     sendData(event, payload, request) {
         if (this.toServer == null) {
-            console.error('toServer is not defined');
+            console.error("toServer is not defined");
             return;
         }
         const outgoingData = {
             type: event,
-            request: request || '',
-            payload: payload
+            request: request || "",
+            payload: payload,
         };
         this.toServer(outgoingData);
     }
@@ -245,7 +260,7 @@ class DeskThing {
      */
     requestData(request, scopes) {
         const authScopes = scopes || {};
-        this.sendData('get', authScopes, request);
+        this.sendData("get", authScopes, request);
     }
     /**
      * Public method to send data to the server.
@@ -273,7 +288,7 @@ class DeskThing {
      * deskThing.sendMessage('Hello, Server!');
      */
     sendMessage(message) {
-        this.send('message', message);
+        this.send("message", message);
     }
     /**
      * Sends a log message to the server. This will be saved to the .logs file and be saved in the Logs on the DeskThingServer GUI
@@ -284,7 +299,7 @@ class DeskThing {
      * deskThing.sendLog('This is a log message.');
      */
     sendLog(message) {
-        this.send('log', message);
+        this.send("log", message);
     }
     /**
      * Sends an error message to the server. This will show up as a red notification
@@ -295,7 +310,7 @@ class DeskThing {
      * deskThing.sendError('An error occurred!');
      */
     sendError(message) {
-        this.send('error', message);
+        this.send("error", message);
     }
     /**
      * Routes request to another app running on the server.
@@ -310,7 +325,7 @@ class DeskThing {
      * deskThing.sendDataToOtherApp('spotify', { type: 'get', request: 'music' });
      */
     sendDataToOtherApp(appId, payload) {
-        this.send('toApp', payload, appId);
+        this.send("toApp", payload, appId);
     }
     /**
      * Sends structured data to the client through the server. This will be received by the webapp client. The "app" field defaults to the current app.
@@ -336,7 +351,7 @@ class DeskThing {
      * });
      */
     sendDataToClient(data) {
-        this.send('data', data);
+        this.send("data", data);
     }
     /**
      * Requests the server to open a specified URL.
@@ -347,7 +362,7 @@ class DeskThing {
      * deskThing.openUrl('https://example.com');
      */
     openUrl(url) {
-        this.send('open', url);
+        this.send("open", url);
     }
     /**
      * Fetches data from the server if not already retrieved, otherwise returns the cached data.
@@ -363,35 +378,35 @@ class DeskThing {
         return __awaiter(this, void 0, void 0, function* () {
             if (!this.data) {
                 if (this.isDataBeingFetched) {
-                    console.warn('Data is already being fetched!!');
+                    console.warn("Data is already being fetched!!");
                     return new Promise((resolve) => {
                         this.dataFetchQueue.push(resolve);
                     });
                 }
                 this.isDataBeingFetched = true;
-                this.requestData('data');
+                this.requestData("data");
                 try {
                     const data = yield Promise.race([
-                        this.once('data'),
-                        new Promise((resolve) => setTimeout(() => resolve(null), 5000)) // Adjust timeout as needed
+                        this.once("data"),
+                        new Promise((resolve) => setTimeout(() => resolve(null), 5000)), // Adjust timeout as needed
                     ]);
                     this.isDataBeingFetched = false;
                     if (data) {
-                        this.dataFetchQueue.forEach(resolve => resolve(data));
+                        this.dataFetchQueue.forEach((resolve) => resolve(data));
                         this.dataFetchQueue = [];
                         return data;
                     }
                     else {
                         if (this.data) {
-                            this.sendLog('Failed to fetch data, but data was found');
-                            this.dataFetchQueue.forEach(resolve => resolve(this.data));
+                            this.sendLog("Failed to fetch data, but data was found");
+                            this.dataFetchQueue.forEach((resolve) => resolve(this.data));
                             this.dataFetchQueue = [];
                             return this.data;
                         }
                         else {
-                            this.dataFetchQueue.forEach(resolve => resolve(null));
+                            this.dataFetchQueue.forEach((resolve) => resolve(null));
                             this.dataFetchQueue = [];
-                            this.sendError('Data is not defined! Try restarting the app');
+                            this.sendError("Data is not defined! Try restarting the app");
                             return null;
                         }
                     }
@@ -399,7 +414,7 @@ class DeskThing {
                 catch (error) {
                     this.sendLog(`Error fetching data: ${error}`);
                     this.isDataBeingFetched = false;
-                    this.dataFetchQueue.forEach(resolve => resolve(this.data));
+                    this.dataFetchQueue.forEach((resolve) => resolve(this.data));
                     this.dataFetchQueue = [];
                     return this.data;
                 }
@@ -425,14 +440,14 @@ class DeskThing {
     getConfig(name) {
         return __awaiter(this, void 0, void 0, function* () {
             // Request config data from the server
-            this.requestData('config', name);
+            this.requestData("config", name);
             // Race between the data being received and a timeout
             return yield Promise.race([
-                this.once('config'),
+                this.once("config"),
                 new Promise((resolve) => setTimeout(() => {
                     resolve(null);
                     this.sendLog(`Failed to fetch config: ${name}`);
-                }, 5000))
+                }, 5000)),
             ]);
         });
     }
@@ -449,13 +464,13 @@ class DeskThing {
         return __awaiter(this, void 0, void 0, function* () {
             var _a;
             if (!((_a = this.data) === null || _a === void 0 ? void 0 : _a.settings)) {
-                console.error('Settings are not defined!');
+                console.error("Settings are not defined!");
                 const data = yield this.getData();
                 if (data && data.settings) {
                     return data.settings;
                 }
                 else {
-                    this.sendLog('Settings are not defined!');
+                    this.sendLog("Settings are not defined!");
                     return null;
                 }
             }
@@ -470,7 +485,7 @@ class DeskThing {
      *
      * @param scopes - The scopes to request input for, defining the type and details of the input needed.
      * @param callback - The function to call with the input response once received.
-     *
+     * @deprecated This will be removed in future release and replaced with tasks.
      * @example
      * deskThing.getUserInput(
      *   {
@@ -484,15 +499,15 @@ class DeskThing {
     getUserInput(scopes, callback) {
         return __awaiter(this, void 0, void 0, function* () {
             if (!scopes) {
-                this.sendError('Scopes not defined in getUserInput!');
+                this.sendError("Scopes not defined in getUserInput!");
                 return;
             }
             // Send the request to the server
-            this.requestData('input', scopes);
+            this.requestData("input", scopes);
             try {
                 // Wait for the 'input' event and pass the response to the callback
-                const response = yield this.once('input');
-                if (callback && typeof callback === 'function') {
+                const response = yield this.once("input");
+                if (callback && typeof callback === "function") {
                     callback(response);
                 }
             }
@@ -511,17 +526,66 @@ class DeskThing {
      *
      * @example
      * // Adding a boolean setting
-     * deskThing.addSetting('darkMode', 'Dark Mode', false, [
-     *   { label: 'On', value: true },
-     *   { label: 'Off', value: false }
-     * ])
+     * deskThing.addSettings({
+     *   darkMode: {
+     *     type: 'boolean',
+     *     label: 'Dark Mode',
+     *     value: false,
+     *     description: 'Enable dark mode theme'
+     *   }
+     * })
      * @example
-     * // Adding a string setting with multiple options
-     * deskThing.addSetting('theme', 'Theme', 'light', [
-     *   { label: 'Light', value: 'light' },
-     *   { label: 'Dark', value: 'dark' },
-     *   { label: 'System', value: 'system' }
-     * ])
+     * // Adding a select setting
+     * deskThing.addSettings({
+     *   theme: {
+     *     type: 'select',
+     *     label: 'Theme',
+     *     value: 'light',
+     *     description: 'Choose your theme',
+     *     options: [
+     *       { label: 'Light', value: 'light' },
+     *       { label: 'Dark', value: 'dark' },
+     *       { label: 'System', value: 'system' }
+     *     ]
+     *   }
+     * })
+     * @example
+     * // Adding a multiselect setting
+     * deskThing.addSettings({
+     *   notifications: {
+     *     type: 'multiselect',
+     *     label: 'Notifications',
+     *     value: ['email'],
+     *     description: 'Choose notification methods',
+     *     options: [
+     *       { label: 'Email', value: 'email' },
+     *       { label: 'SMS', value: 'sms' },
+     *       { label: 'Push', value: 'push' }
+     *     ]
+     *   }
+     * })
+     * @example
+     * // Adding a number setting
+     * deskThing.addSettings({
+     *   fontSize: {
+     *     type: 'number',
+     *     label: 'Font Size',
+     *     value: 16,
+     *     description: 'Set the font size in pixels',
+     *     min: 12,
+     *     max: 24
+     *   }
+     * })
+     * @example
+     * // Adding a string setting
+     * deskThing.addSettings({
+     *   username: {
+     *     type: 'string',
+     *     label: 'Username',
+     *     value: '',
+     *     description: 'Enter your username'
+     *   }
+     * })
      */
     addSettings(settings) {
         var _a;
@@ -541,71 +605,102 @@ class DeskThing {
                     console.warn(`Setting with label "${setting.label}" already exists. It will be overwritten.`);
                     this.sendLog(`Setting with label "${setting.label}" already exists. It will be overwritten.`);
                 }
-                this.data.settings[id] = {
-                    value: setting.value,
-                    label: setting.label,
-                    options: setting.options,
-                };
+                switch (setting.type) {
+                    case 'select':
+                        this.data.settings[id] = {
+                            type: 'select',
+                            value: setting.value,
+                            label: setting.label,
+                            description: setting.description || '',
+                            options: setting.options
+                        };
+                        break;
+                    case 'multiselect':
+                        this.data.settings[id] = {
+                            type: 'multiselect',
+                            value: setting.value,
+                            label: setting.label,
+                            description: setting.description || '',
+                            options: setting.options
+                        };
+                        break;
+                    case 'number':
+                        this.data.settings[id] = {
+                            type: 'number',
+                            value: setting.value,
+                            label: setting.label,
+                            min: setting.min,
+                            max: setting.max,
+                            description: setting.description || '',
+                        };
+                        break;
+                    case 'boolean':
+                        this.data.settings[id] = {
+                            type: 'boolean',
+                            value: setting.value,
+                            description: setting.description || '',
+                            label: setting.label
+                        };
+                        break;
+                    case 'string':
+                        this.data.settings[id] = {
+                            type: 'string',
+                            description: setting.description || '',
+                            value: setting.value,
+                            label: setting.label
+                        };
+                        break;
+                }
             });
-            console.log('sending settings', this.data.settings);
-            this.sendData('add', { settings: this.data.settings });
+            console.log("sending settings", this.data.settings);
+            this.sendData("add", { settings: this.data.settings });
         }
+    } /**
+     * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
+     *
+     * @param name - The name of the action.
+     * @param id - The unique identifier for the action. This is what will be used when it is triggered
+     * @param description - A description of the action.
+     * @param flair - Optional flair for the action (default is an empty string).
+     *
+     * @example
+     * deskthing.addAction('Print Hello', 'printHello', 'Prints Hello to the console', '')
+     * deskthing.on('button', (data) => {
+     *      if (data.payload.id === 'printHello') {
+     *          console.log('Hello')
+     *      }
+     * })
+     */
+    registerAction(name, id, description, flair = "") {
+        this.sendData("action", { name, id, description, flair }, "add");
     }
     /**
-   * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
-   *
-   * @param name - The name of the action.
-   * @param id - The unique identifier for the action. This is what will be used when it is triggered
-   * @param description - A description of the action.
-   * @param flair - Optional flair for the action (default is an empty string).
-   *
-   * @example
-   * deskthing.addAction('Print Hello', 'printHello', 'Prints Hello to the console', '')
-   * deskthing.on('button', (data) => {
-   *      if (data.payload.id === 'printHello') {
-   *          console.log('Hello')
-   *      }
-   * })
-   */
-    registerAction(name, id, description, flair = '') {
-        this.sendData('action', { name, id, description, flair }, 'add');
-    }
-    /**
-   * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
-   *
-   * @param action - The action object to register.
-   * @throws {Error} If the action object is invalid.
-   * @example
-   * const action = {
-   *      name: 'Print Hello',
-   *      id: 'printHello',
-   *      description: 'Prints Hello to the console',
-   *      flair: ''
-   * }
-   * deskthing.addActionObject(action)
-   * deskthing.on('button', (data) => {
-   *      if (data.payload.id === 'printHello') {
-   *          console.log('Hello')
-   *      }
-   * })
-   */
+     * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
+     *
+     * @param action - The action object to register.
+     * @throws {Error} If the action object is invalid.
+     * @example
+     * const action = {
+     *      name: 'Print Hello',
+     *      id: 'printHello',
+     *      description: 'Prints Hello to the console',
+     *      flair: ''
+     * }
+     * deskthing.addActionObject(action)
+     * deskthing.on('button', (data) => {
+     *      if (data.payload.id === 'printHello') {
+     *          console.log('Hello')
+     *      }
+     * })
+     */
     registerActionObject(action) {
-        if (!action || typeof action !== 'object') {
-            throw new Error('Invalid action object');
+        if (!action || typeof action !== "object") {
+            throw new Error("Invalid action object");
         }
-        if (!action.name || typeof action.name !== 'string') {
-            throw new Error('Action must have a valid name');
+        if (!action.id || typeof action.id !== "string") {
+            throw new Error("Action must have a valid id");
         }
-        if (!action.id || typeof action.id !== 'string') {
-            throw new Error('Action must have a valid id');
-        }
-        if (!action.description || typeof action.description !== 'string') {
-            throw new Error('Action must have a valid description');
-        }
-        if (action.flair !== undefined && typeof action.flair !== 'string') {
-            throw new Error('Action flair must be a string if provided');
-        }
-        this.sendData('action', action, 'add');
+        this.sendData("action", action, "add");
     }
     /**
      * Updates the flair of a specified action id. This can be used to update the image of the button. Flair is appended to the end of the action name and thus the end of the SVG path as well
@@ -616,49 +711,70 @@ class DeskThing {
      * deskthing.updateFlair('like', 'active')
      * // Now using likeactive.svg
      */
-    updateFlair(id, flair) {
-        this.sendData('action', { id, flair }, 'update');
+    updateIcon(id, icon) {
+        this.sendData("action", { id, icon }, "update");
     }
     /**
-   * Registers a new key with the specified identifier. This can be mapped to any action. Use a keycode to map a specific keybind.
-   * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code
-   *
-   * Keys can also be considered "digital" like buttons on the screen.
-   * The first number in the key will be passed to the action (e.g. customAction13 with action SwitchView will switch to the 13th view )
-   *
-   * @param id - The unique identifier for the key.
-   * @param description - Description for the key.
-   */
-    registerKey(id, description) {
-        this.sendData('button', { id, description }, 'add');
+     * Registers a new key with the specified identifier. This can be mapped to any action. Use a keycode to map a specific keybind.
+     * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code
+     *
+     * Keys can also be considered "digital" like buttons on the screen.
+     * The first number in the key will be passed to the action (e.g. customAction13 with action SwitchView will switch to the 13th view )
+     *
+     * @param id - The unique identifier for the key.
+     * @param description - Description for the key.
+     */
+    registerKey(id, description, flavors, version) {
+        this.sendData("button", { id, description, flavors, version }, "add");
     }
     /**
-   * Removes an action with the specified identifier.
-   *
-   * @param id - The unique identifier of the action to be removed.
-   */
+     * Registers a new key with the specified identifier. This can be mapped to any action. Use a keycode to map a specific keybind.
+     * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code
+     *
+     * Keys can also be considered "digital" like buttons on the screen.
+     * @param key - The key object to register.
+     */
+    registerKeyObject(key) {
+        if (!key || typeof key !== "object") {
+            throw new Error("Invalid key object");
+        }
+        if (!key.flavors ||
+            !Array.isArray(key.flavors) ||
+            key.flavors.length === 0) {
+            throw new Error("Key must have valid flavors");
+        }
+        if (typeof key.id !== "string") {
+            throw new Error("Key must have a valid id");
+        }
+        this.sendData("button", key, "add");
+    }
+    /**
+     * Removes an action with the specified identifier.
+     *
+     * @param id - The unique identifier of the action to be removed.
+     */
     removeAction(id) {
-        this.sendData('action', { id }, 'remove');
+        this.sendData("action", { id }, "remove");
     }
     /**
-   * Removes a key with the specified identifier.
-   *
-   * @param id - The unique identifier of the key to be removed.
-   */
+     * Removes a key with the specified identifier.
+     *
+     * @param id - The unique identifier of the key to be removed.
+     */
     removeKey(id) {
-        this.sendData('button', { id }, 'remove');
+        this.sendData("button", { id }, "remove");
     }
     /**
-   * Saves the provided data by merging it with the existing data and updating settings.
-   * Sends the updated data to the server and notifies listeners.
-   *
-   * @param data - The data to be saved and merged with existing data.
-   */
+     * Saves the provided data by merging it with the existing data and updating settings.
+     * Sends the updated data to the server and notifies listeners.
+     *
+     * @param data - The data to be saved and merged with existing data.
+     */
     saveData(data) {
         var _a;
         this.data = Object.assign(Object.assign(Object.assign({}, this.data), data), { settings: Object.assign(Object.assign({}, (_a = this.data) === null || _a === void 0 ? void 0 : _a.settings), data.settings) });
-        this.sendData('add', this.data);
-        this.notifyListeners('data', this.data);
+        this.sendData("add", this.data);
+        this.notifyListeners("data", this.data);
     }
     /**
      * Adds a background task that will loop until either the task is cancelled or the task function returns false.
@@ -707,41 +823,41 @@ class DeskThing {
         };
     }
     /**
- * Encodes an image from a URL and returns a Promise that resolves to a base64 encoded string.
- *
- *
- * @param url - The url that points directly to the image
- * @param type - The type of image to return (jpeg for static and gif for animated)
- * @param retries - The number of times to retry the request in case of failure. Defaults to 3.
- * @returns Promise string that has the base64 encoded image
- *
- * @example
- * // Getting encoded spotify image data
- * const encodedImage = await deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
- *
- * deskThing.sendMessageToAllClients({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
- */
+     * Encodes an image from a URL and returns a Promise that resolves to a base64 encoded string.
+     *
+     *
+     * @param url - The url that points directly to the image
+     * @param type - The type of image to return (jpeg for static and gif for animated)
+     * @param retries - The number of times to retry the request in case of failure. Defaults to 3.
+     * @returns Promise string that has the base64 encoded image
+     *
+     * @example
+     * // Getting encoded spotify image data
+     * const encodedImage = await deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
+     *
+     * deskThing.sendMessageToAllClients({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
+     */
     encodeImageFromUrl(url_1) {
-        return __awaiter(this, arguments, void 0, function* (url, type = 'jpeg', retries = 3) {
+        return __awaiter(this, arguments, void 0, function* (url, type = "jpeg", retries = 3) {
             try {
                 console.log(`Fetching ${type} data...`);
                 const response = yield (0, axios_1.default)({
-                    method: 'get',
+                    method: "get",
                     url,
-                    responseType: 'stream'
+                    responseType: "stream",
                 });
                 let data = [];
-                response.data.on('data', (chunk) => {
+                response.data.on("data", (chunk) => {
                     data.push(chunk);
                 });
                 return new Promise((resolve, reject) => {
-                    response.data.on('end', () => {
+                    response.data.on("end", () => {
                         const bufferData = Buffer.concat(data); // Combine all the buffer chunks
-                        const imgData = `data:image/${type};base64,${bufferData.toString('base64')}`;
+                        const imgData = `data:image/${type};base64,${bufferData.toString("base64")}`;
                         console.log(`Sending ${type} data`);
                         resolve(imgData);
                     });
-                    response.data.on('error', (error) => {
+                    response.data.on("error", (error) => {
                         console.error(`Error fetching ${type}:`, error);
                         if (retries > 0) {
                             console.warn(`Retrying... (${retries} attempts left)`);
@@ -770,47 +886,49 @@ class DeskThing {
      * const manifest = deskThing.loadManifest();
      */
     loadManifest() {
-        const manifestPath = path.resolve(__dirname, './manifest.json');
+        const manifestPath = path.resolve(__dirname, "./manifest.json");
         try {
-            const manifestData = fs.readFileSync(manifestPath, 'utf-8');
+            const manifestData = fs.readFileSync(manifestPath, "utf-8");
             this.manifest = JSON.parse(manifestData);
         }
         catch (error) {
-            console.error('Failed to load manifest:', error);
+            console.error("Failed to load manifest:", error);
         }
     }
     /**
-    * Returns the manifest in a Response structure
-    * If the manifest is not found or fails to load, it returns a 500 status code.
-    * It will attempt to read the manifest from file if the manifest does not exist in cache
-    *
-    * !! This method is not intended for use in client code.
-    *
-    * @example
-    * const manifest = deskThing.getManifest();
-    * console.log(manifest);
-    */
+     * Returns the manifest in a Response structure
+     * If the manifest is not found or fails to load, it returns a 500 status code.
+     * It will attempt to read the manifest from file if the manifest does not exist in cache
+     *
+     * !! This method is not intended for use in client code.
+     *
+     * @example
+     * const manifest = deskThing.getManifest();
+     * console.log(manifest);
+     */
     getManifest() {
         if (!this.manifest) {
-            console.warn('Manifest Not Found - trying to load manually...');
+            console.warn("Manifest Not Found - trying to load manually...");
             this.loadManifest();
             if (!this.manifest) {
                 return {
-                    data: { message: 'Manifest not found or failed to load after 2nd attempt' },
+                    data: {
+                        message: "Manifest not found or failed to load after 2nd attempt",
+                    },
                     status: 500,
-                    statusText: 'Internal Server Error',
-                    request: []
+                    statusText: "Internal Server Error",
+                    request: [],
                 };
             }
             else {
-                //console.log('Manifest loaded!') 
+                //console.log('Manifest loaded!')
             }
         }
         return {
             data: this.manifest,
             status: 200,
-            statusText: 'OK',
-            request: []
+            statusText: "OK",
+            request: [],
         };
     }
     /**
@@ -825,22 +943,22 @@ class DeskThing {
             this.SysEvents = SysEvents;
             this.stopRequested = false;
             try {
-                yield this.notifyListeners('start');
+                yield this.notifyListeners("start");
             }
             catch (error) {
-                console.error('Error in start:', error);
+                console.error("Error in start:", error);
                 return {
                     data: { message: `Error starting the app: ${error}` },
                     status: 500,
-                    statusText: 'Internal Server Error',
-                    request: []
+                    statusText: "Internal Server Error",
+                    request: [],
                 };
             }
             return {
-                data: { message: 'Started successfully!' },
+                data: { message: "Started successfully!" },
                 status: 200,
-                statusText: 'OK',
-                request: []
+                statusText: "OK",
+                request: [],
             };
         });
     }
@@ -859,31 +977,31 @@ class DeskThing {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 if (this.data) {
-                    this.sendData('set', this.data);
+                    this.sendData("set", this.data);
                 }
                 // Notify listeners of the stop event
-                yield this.notifyListeners('stop');
+                yield this.notifyListeners("stop");
                 // Set flag to indicate stop request
                 this.stopRequested = true;
                 // Stop all background tasks
-                this.backgroundTasks.forEach(cancel => cancel());
+                this.backgroundTasks.forEach((cancel) => cancel());
                 this.backgroundTasks = [];
-                this.sendLog('Background tasks stopped and removed');
+                this.sendLog("Background tasks stopped and removed");
             }
             catch (error) {
-                console.error('Error in stop:', error);
+                console.error("Error in stop:", error);
                 return {
                     data: { message: `Error in stop: ${error}` },
                     status: 500,
-                    statusText: 'Internal Server Error',
-                    request: []
+                    statusText: "Internal Server Error",
+                    request: [],
                 };
             }
             return {
-                data: { message: 'App stopped successfully!' },
+                data: { message: "App stopped successfully!" },
                 status: 200,
-                statusText: 'OK',
-                request: []
+                statusText: "OK",
+                request: [],
             };
         });
     }
@@ -891,30 +1009,30 @@ class DeskThing {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 // Notify listeners of the stop event
-                yield this.notifyListeners('purge');
+                yield this.notifyListeners("purge");
                 // Set flag to indicate stop request
                 this.stopRequested = true;
                 // Stop all background tasks
-                this.backgroundTasks.forEach(cancel => cancel());
-                this.sendLog('Background tasks stopped');
+                this.backgroundTasks.forEach((cancel) => cancel());
+                this.sendLog("Background tasks stopped");
                 // Clear cached data
                 this.clearCache();
-                this.sendLog('Cache cleared');
+                this.sendLog("Cache cleared");
             }
             catch (error) {
-                console.error('Error in Purge:', error);
+                console.error("Error in Purge:", error);
                 return {
                     data: { message: `Error in Purge: ${error}` },
                     status: 500,
-                    statusText: 'Internal Server Error',
-                    request: []
+                    statusText: "Internal Server Error",
+                    request: [],
                 };
             }
             return {
-                data: { message: 'App purged successfully!' },
+                data: { message: "App purged successfully!" },
                 status: 200,
-                statusText: 'OK',
-                request: []
+                statusText: "OK",
+                request: [],
             };
         });
     }
@@ -926,34 +1044,36 @@ class DeskThing {
         this.SysEvents = null;
         this.stopRequested = false;
         this.backgroundTasks = [];
-        this.sysListeners.forEach(removeListener => removeListener());
+        this.sysListeners.forEach((removeListener) => removeListener());
         this.sysListeners = [];
-        this.sendLog('Cache cleared');
+        this.sendLog("Cache cleared");
         this.toServer = null;
     }
     toClient(data) {
-        if (data.type === 'data' && data) {
+        if (data.type === "data" && data) {
             const payload = data.payload; // Extract the first argument as data
-            if (typeof payload === 'object' && data !== null) {
+            if (typeof payload === "object" && data !== null) {
                 this.saveData(payload);
             }
             else {
-                console.warn('Received invalid data from server:', payload);
-                this.sendLog('Received invalid data from server:' + payload);
+                console.warn("Received invalid data from server:", payload);
+                this.sendLog("Received invalid data from server:" + payload);
                 this.initializeData();
             }
         }
-        else if (data.type === 'message') {
-            this.sendLog('Received message from server:' + data.payload);
+        else if (data.type === "message") {
+            this.sendLog("Received message from server:" + data.payload);
         }
-        else if (data.type === 'set' && data.request === 'settings' && data.payload) {
+        else if (data.type === "set" &&
+            data.request === "settings" &&
+            data.payload) {
             const { id, value } = data.payload;
             if (this.data && this.data.settings && this.data.settings[id]) {
                 this.sendLog(`Setting with label "${id}" changing from ${this.data.settings[id].value} to ${value}`);
                 this.data.settings[id].value = value;
-                this.sendData('add', { settings: this.data.settings });
-                this.notifyListeners('settings', this.data.settings);
-                this.notifyListeners('data', this.data);
+                this.sendData("add", { settings: this.data.settings });
+                this.notifyListeners("settings", this.data.settings);
+                this.notifyListeners("data", this.data);
             }
             else {
                 this.sendLog(`Setting with label "${id}" not found`);

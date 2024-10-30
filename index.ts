@@ -79,15 +79,60 @@ export interface AuthScopes {
     value?: string;
   };
 }
-export interface Settings {
-  [key: string]: {
-    value: string | boolean;
-    label: string;
-    options: {
-      label: string;
-      value: string | boolean;
-    }[];
-  };
+export interface SettingsNumber {
+  value: number
+  type: 'number'
+  min: number
+  max: number
+  label: string
+  description?: string
+}
+
+export interface SettingsBoolean {
+  value: boolean
+  type: 'boolean'
+  label: string
+  description?: string
+}
+
+export interface SettingsString {
+  value: string
+  type: 'string'
+  label: string
+  description?: string
+}
+
+export interface SettingsSelect {
+  value: string
+  type: 'select'
+  label: string
+  description?: string
+  options: {
+    label: string
+    value: string
+  }[]
+}
+
+export interface SettingsMultiSelect {
+  value: string[]
+  type: 'multiselect'
+  label: string
+  description?: string
+  options: {
+    label: string,
+    value: string
+  }[]
+}
+
+export type SettingsType =
+  | SettingsNumber
+  | SettingsBoolean
+  | SettingsString
+  | SettingsSelect
+  | SettingsMultiSelect
+
+export interface AppSettings {
+  [key: string]: SettingsType
 }
 
 export interface InputResponse {
@@ -108,8 +153,8 @@ export interface SocketData {
 }
 
 export interface DataInterface {
-  [key: string]: string | Settings | undefined | any[];
-  settings?: Settings;
+  [key: string]: string | AppSettings | undefined | any[];
+  settings?: AppSettings;
 }
 
 export type OutgoingData = {
@@ -611,7 +656,7 @@ export class DeskThing {
    * const settings = deskThing.getSettings();
    * console.log('Current settings:', settings);
    */
-  async getSettings(): Promise<Settings | null> {
+  async getSettings(): Promise<AppSettings | null> {
     if (!this.data?.settings) {
       console.error("Settings are not defined!");
       const data = await this.getData();
@@ -632,7 +677,7 @@ export class DeskThing {
    *
    * @param scopes - The scopes to request input for, defining the type and details of the input needed.
    * @param callback - The function to call with the input response once received.
-   *
+   * @deprecated This will be removed in future release and replaced with tasks.
    * @example
    * deskThing.getUserInput(
    *   {
@@ -677,19 +722,68 @@ export class DeskThing {
    *
    * @example
    * // Adding a boolean setting
-   * deskThing.addSetting('darkMode', 'Dark Mode', false, [
-   *   { label: 'On', value: true },
-   *   { label: 'Off', value: false }
-   * ])
+   * deskThing.addSettings({
+   *   darkMode: {
+   *     type: 'boolean',
+   *     label: 'Dark Mode',
+   *     value: false,
+   *     description: 'Enable dark mode theme'
+   *   }
+   * })
    * @example
-   * // Adding a string setting with multiple options
-   * deskThing.addSetting('theme', 'Theme', 'light', [
-   *   { label: 'Light', value: 'light' },
-   *   { label: 'Dark', value: 'dark' },
-   *   { label: 'System', value: 'system' }
-   * ])
+   * // Adding a select setting
+   * deskThing.addSettings({
+   *   theme: {
+   *     type: 'select',
+   *     label: 'Theme',
+   *     value: 'light',
+   *     description: 'Choose your theme',
+   *     options: [
+   *       { label: 'Light', value: 'light' },
+   *       { label: 'Dark', value: 'dark' },
+   *       { label: 'System', value: 'system' }
+   *     ]
+   *   }
+   * })
+   * @example
+   * // Adding a multiselect setting
+   * deskThing.addSettings({
+   *   notifications: {
+   *     type: 'multiselect',
+   *     label: 'Notifications',
+   *     value: ['email'],
+   *     description: 'Choose notification methods',
+   *     options: [
+   *       { label: 'Email', value: 'email' },
+   *       { label: 'SMS', value: 'sms' },
+   *       { label: 'Push', value: 'push' }
+   *     ]
+   *   }
+   * })
+   * @example
+   * // Adding a number setting
+   * deskThing.addSettings({
+   *   fontSize: {
+   *     type: 'number',
+   *     label: 'Font Size',
+   *     value: 16,
+   *     description: 'Set the font size in pixels',
+   *     min: 12,
+   *     max: 24
+   *   }
+   * })
+   * @example
+   * // Adding a string setting
+   * deskThing.addSettings({
+   *   username: {
+   *     type: 'string',
+   *     label: 'Username',
+   *     value: '',
+   *     description: 'Enter your username'
+   *   }
+   * })
    */
-  addSettings(settings: Settings): void {
+  addSettings(settings: AppSettings): void {
     if (!this.data) {
       this.data = { settings: {} };
     } else if (!this.data.settings) {
@@ -711,19 +805,59 @@ export class DeskThing {
           );
         }
 
-        this.data.settings[id] = {
-          value: setting.value,
-          label: setting.label,
-          options: setting.options,
-        };
+        switch (setting.type) {
+          case 'select':
+            this.data.settings[id] = {
+              type: 'select',
+              value: setting.value,
+              label: setting.label,
+              description: setting.description || '',
+              options: setting.options
+            };
+            break;
+          case 'multiselect':
+            this.data.settings[id] = {
+              type: 'multiselect',
+              value: setting.value,
+              label: setting.label,
+              description: setting.description || '',
+              options: setting.options
+            };
+            break;
+          case 'number':
+            this.data.settings[id] = {
+              type: 'number',
+              value: setting.value,
+              label: setting.label,
+              min: setting.min,
+              max: setting.max,
+              description: setting.description || '',
+            };
+            break;
+          case 'boolean':
+            this.data.settings[id] = {
+              type: 'boolean',
+              value: setting.value,
+              description: setting.description || '',
+              label: setting.label
+            };
+            break;
+          case 'string':
+            this.data.settings[id] = {
+              type: 'string',
+              description: setting.description || '',
+              value: setting.value,
+              label: setting.label
+            };
+            break;
+        }
       });
 
       console.log("sending settings", this.data.settings);
 
       this.sendData("add", { settings: this.data.settings });
     }
-  }
-  /**
+  }  /**
    * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
    *
    * @param name - The name of the action.
