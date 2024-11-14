@@ -586,6 +586,34 @@ class DeskThing {
      *     description: 'Enter your username'
      *   }
      * })
+     * @example
+     * // Adding a range setting
+     * deskThing.addSettings({
+     *   volume: {
+     *     type: 'range',
+     *     label: 'Volume',
+     *     value: 50,
+     *     description: 'Adjust the volume level',
+     *     min: 0,
+     *     max: 100,
+     *     step: 1
+     *   }
+     * })
+     * @example
+     * // Adding an order setting
+     * deskThing.addSettings({
+     *   displayOrder: {
+     *     type: 'order',
+     *     label: 'Display Order',
+     *     value: ['section1', 'section2', 'section3'],
+     *     description: 'Arrange the display order of sections',
+     *     options: [
+     *       { label: 'Section 1', value: 'section1' },
+     *       { label: 'Section 2', value: 'section2' },
+     *       { label: 'Section 3', value: 'section3' }
+     *     ]
+     *   }
+     * })
      */
     addSettings(settings) {
         var _a;
@@ -595,18 +623,27 @@ class DeskThing {
         else if (!this.data.settings) {
             this.data.settings = {};
         }
+        if (!settings || typeof settings !== 'object') {
+            throw new Error('Settings must be a valid object');
+        }
         if ((_a = this.data) === null || _a === void 0 ? void 0 : _a.settings) {
             Object.keys(settings).forEach((id) => {
                 var _a;
                 const setting = settings[id];
                 if (!((_a = this.data) === null || _a === void 0 ? void 0 : _a.settings))
                     return;
+                if (!setting.type || !setting.label) {
+                    throw new Error(`Setting ${id} must have a type and label`);
+                }
                 if (this.data.settings[id]) {
                     console.warn(`Setting with label "${setting.label}" already exists. It will be overwritten.`);
                     this.sendLog(`Setting with label "${setting.label}" already exists. It will be overwritten.`);
                 }
                 switch (setting.type) {
                     case 'select':
+                        if (!Array.isArray(setting.options)) {
+                            throw new Error(`Select setting ${id} must have options array`);
+                        }
                         this.data.settings[id] = {
                             type: 'select',
                             value: setting.value,
@@ -616,6 +653,9 @@ class DeskThing {
                         };
                         break;
                     case 'multiselect':
+                        if (!Array.isArray(setting.options)) {
+                            throw new Error(`Multiselect setting ${id} must have options array`);
+                        }
                         this.data.settings[id] = {
                             type: 'multiselect',
                             value: setting.value,
@@ -625,6 +665,9 @@ class DeskThing {
                         };
                         break;
                     case 'number':
+                        if (typeof setting.min !== 'number' || typeof setting.max !== 'number') {
+                            throw new Error(`Number setting ${id} must have min and max values`);
+                        }
                         this.data.settings[id] = {
                             type: 'number',
                             value: setting.value,
@@ -635,6 +678,9 @@ class DeskThing {
                         };
                         break;
                     case 'boolean':
+                        if (typeof setting.value !== 'boolean') {
+                            throw new Error(`Boolean setting ${id} must have a boolean value`);
+                        }
                         this.data.settings[id] = {
                             type: 'boolean',
                             value: setting.value,
@@ -643,6 +689,9 @@ class DeskThing {
                         };
                         break;
                     case 'string':
+                        if (typeof setting.value !== 'string') {
+                            throw new Error(`String setting ${id} must have a string value`);
+                        }
                         this.data.settings[id] = {
                             type: 'string',
                             description: setting.description || '',
@@ -650,6 +699,35 @@ class DeskThing {
                             label: setting.label
                         };
                         break;
+                    case 'range':
+                        if (typeof setting.min !== 'number' || typeof setting.max !== 'number') {
+                            throw new Error(`Range setting ${id} must have min and max values`);
+                        }
+                        this.data.settings[id] = {
+                            type: 'range',
+                            value: setting.value,
+                            label: setting.label,
+                            min: setting.min,
+                            max: setting.max,
+                            step: setting.step || 1,
+                            description: setting.description || '',
+                        };
+                        break;
+                    case 'ranked':
+                        if (!Array.isArray(setting.options) || !Array.isArray(setting.value)) {
+                            throw new Error(`Ranked setting ${id} must have options and value arrays`);
+                        }
+                        this.data.settings[id] = {
+                            type: 'ranked',
+                            value: setting.value,
+                            label: setting.label,
+                            description: setting.description || '',
+                            options: setting.options
+                        };
+                        break;
+                    default:
+                        this.sendError(`Unknown setting type: ${setting} for setting ${id}.`);
+                        throw new Error(`Unknown setting type: ${setting}`);
                 }
             });
             console.log("sending settings", this.data.settings);

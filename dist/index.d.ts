@@ -59,10 +59,20 @@ export interface SettingsBoolean {
     label: string;
     description?: string;
 }
+export interface SettingsRange {
+    value: number;
+    type: 'range';
+    label: string;
+    min: number;
+    max: number;
+    step?: number;
+    description?: string;
+}
 export interface SettingsString {
     value: string;
     type: 'string';
     label: string;
+    maxLength?: number;
     description?: string;
 }
 export interface SettingsSelect {
@@ -70,22 +80,29 @@ export interface SettingsSelect {
     type: 'select';
     label: string;
     description?: string;
-    options: {
-        label: string;
-        value: string;
-    }[];
+    placeholder?: string;
+    options: SettingOption[];
+}
+export type SettingOption = {
+    label: string;
+    value: string;
+};
+export interface SettingsRanked {
+    value: string[];
+    type: 'ranked';
+    label: string;
+    description?: string;
+    options: SettingOption[];
 }
 export interface SettingsMultiSelect {
     value: string[];
     type: 'multiselect';
     label: string;
     description?: string;
-    options: {
-        label: string;
-        value: string;
-    }[];
+    placeholder?: string;
+    options: SettingOption[];
 }
-export type SettingsType = SettingsNumber | SettingsBoolean | SettingsString | SettingsSelect | SettingsMultiSelect;
+export type SettingsType = SettingsNumber | SettingsBoolean | SettingsString | SettingsSelect | SettingsMultiSelect | SettingsRange | SettingsRanked;
 export interface AppSettings {
     [key: string]: SettingsType;
 }
@@ -496,6 +513,34 @@ export declare class DeskThing {
      *     label: 'Username',
      *     value: '',
      *     description: 'Enter your username'
+     *   }
+     * })
+     * @example
+     * // Adding a range setting
+     * deskThing.addSettings({
+     *   volume: {
+     *     type: 'range',
+     *     label: 'Volume',
+     *     value: 50,
+     *     description: 'Adjust the volume level',
+     *     min: 0,
+     *     max: 100,
+     *     step: 1
+     *   }
+     * })
+     * @example
+     * // Adding an order setting
+     * deskThing.addSettings({
+     *   displayOrder: {
+     *     type: 'order',
+     *     label: 'Display Order',
+     *     value: ['section1', 'section2', 'section3'],
+     *     description: 'Arrange the display order of sections',
+     *     options: [
+     *       { label: 'Section 1', value: 'section1' },
+     *       { label: 'Section 2', value: 'section2' },
+     *       { label: 'Section 3', value: 'section3' }
+     *     ]
      *   }
      * })
      */

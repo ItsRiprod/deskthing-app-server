@@ -1,6 +1,6 @@
 {
   "name": "deskthing-server",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "The Deskthing connector for the server apps",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
