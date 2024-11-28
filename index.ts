@@ -21,17 +21,28 @@ export type IncomingEvent =
 
 // Events that can be sent back to the server
 export type OutgoingEvent =
-  | "message"
   | "data"
   | "get"
   | "set"
   | "add"
   | "open"
   | "toApp"
+  | "message"
+  | "warn"
+  | "debug"
+  | "fatal"
   | "error"
   | "log"
   | "action"
   | "button";
+
+export enum LOGGING_LEVELS {
+  LOG = "log",
+  DEBUG = "debug",
+  WARN = "warn",
+  ERROR = "error",
+  FATAL = "fatal",
+}
 
 export type SongData = {
   album: string | null;
@@ -252,6 +263,9 @@ export type Response = {
   request: string[];
 };
 
+/**
+ * The DeskThing class is the main class for the DeskThing library. This should only be used on the server side of your application
+ */
 export class DeskThing {
   private static instance: DeskThing;
   private Listeners: { [key in IncomingEvent]?: DeskthingListener[] } = {};
@@ -272,6 +286,7 @@ export class DeskThing {
   /**
    * Singleton pattern: Ensures only one instance of DeskThing exists.
    *
+   * @since 0.8.0
    * @example
    * const deskThing = DeskThing.getInstance();
    * deskthing.on('start', () => {
@@ -288,7 +303,8 @@ export class DeskThing {
   /**
    * Initializes data if it is not already set on the server.
    * This method is run internally when there is no data retrieved from the server.
-   *
+   * 
+   * @since 0.8.0
    * @example
    * const deskThing = DeskThing.getInstance();
    * deskThing.start({ toServer, SysEvents });
@@ -310,6 +326,7 @@ export class DeskThing {
   /**
    * Notifies all listeners of a particular event.
    *
+   * @since 0.8.0
    * @example
    * deskThing.on('message', (msg) => console.log(msg));
    * deskThing.notifyListeners('message', 'Hello, World!');
@@ -327,6 +344,7 @@ export class DeskThing {
   /**
    * Registers an event listener for a specific incoming event. Events are either the "type" value of the incoming SocketData object or a special event like "start", "stop", or "data".
    *
+   * @since 0.8.0
    * @param event - The event type to listen for.
    * @param callback - The function to call when the event occurs.
    * @returns A function to remove the listener.
@@ -358,6 +376,7 @@ export class DeskThing {
   /**
    * Removes a specific event listener for a particular incoming event.
    *
+   * @since 0.8.0
    * @param event - The event for which to remove the listener.
    * @param callback - The listener function to remove.
    *
@@ -378,6 +397,8 @@ export class DeskThing {
   /**
    * Registers a system event listener. This feature is somewhat limited but allows for detecting when there are new audiosources or button mappings registered to the server.
    * Eg 'config' is emitted when the server has new button mappings or audio sources registered.
+   *
+   * @since 0.8.0
    * @param event - The system event to listen for.
    * @param listener - The function to call when the event occurs.
    * @returns A function to remove the listener.
@@ -404,6 +425,7 @@ export class DeskThing {
   /**
    * Registers a one-time listener for an incoming event. The listener will be automatically removed after the first occurrence of the event.
    *
+   * @since 0.8.0
    * @param event - The event to listen for.
    * @param callback - Optional callback function. If omitted, returns a promise.
    * @returns A promise that resolves with the event data if no callback is provided.
@@ -438,6 +460,7 @@ export class DeskThing {
   /**
    * Sends data to the server with a specified event type.
    *
+   * @since 0.8.0
    * @param event - The event type to send.
    * @param payload - The data to send.
    * @param request - Optional request string.
@@ -462,6 +485,7 @@ export class DeskThing {
   /**
    * Requests data from the server with optional scopes.
    *
+   * @since 0.8.0
    * @param request - The type of data to request ('data', 'config', or 'input').
    * @param scopes - Optional scopes to request specific data.
    *
@@ -476,6 +500,7 @@ export class DeskThing {
   /**
    * Public method to send data to the server.
    *
+   * @since 0.8.0
    * @param event - The event type to send.
    * @param payload - The data to send.
    * @param request - Optional request string.
@@ -494,46 +519,82 @@ export class DeskThing {
   /**
    * Sends a plain text message to the server. This will display as a gray notification on the DeskThingServer GUI
    *
+   * @since 0.8.0
    * @param message - The message to send to the server.
-   *
+   * @deprecated - Use sendLog or sendWarning instead
    * @example
    * deskThing.sendMessage('Hello, Server!');
    */
   sendMessage(message: string): void {
-    this.send("message", message);
+    this.send('message', message);
   }
 
   /**
    * Sends a log message to the server. This will be saved to the .logs file and be saved in the Logs on the DeskThingServer GUI
    *
-   * @param message - The log message to send.
-   *
+   * @param log - The log message to send.
+   * @since 0.8.0
    * @example
-   * deskThing.sendLog('This is a log message.');
+   * deskThing.sendLog('[spotify] Fetching data...');
    */
-  sendLog(message: string): void {
-    this.send("log", message);
+  sendLog(log: string): void {
+    this.send(LOGGING_LEVELS.LOG, log);
   }
+    /**
+   * Sends a warning to the server. This will be saved to the .logs file and be saved in the Logs on the DeskThingServer GUI
+   *
+   * @param warning - The warning message to send.
+   * @since 0.9.3
+   * @example
+   * deskThing.sendWarning('[spotify] Ensure the API keys are set!');
+   */
+    sendWarning(warning: string): void {
+      this.send(LOGGING_LEVELS.WARN, warning);
+    }
 
   /**
    * Sends an error message to the server. This will show up as a red notification
    *
    * @param message - The error message to send.
-   *
+   * @since 0.8.0
    * @example
    * deskThing.sendError('An error occurred!');
    */
   sendError(message: string): void {
-    this.send("error", message);
+    this.send(LOGGING_LEVELS.ERROR, message);
   }
 
+  /**
+   * Sends a fatal error message to the server. This will show up as a critical red notification
+   *
+   * @param message - The fatal error message to send.
+   * @since 0.9.3
+   * @example
+   * deskThing.sendFatal('Critical system failure!');
+   */
+  sendFatal(message: string): void {
+    this.send(LOGGING_LEVELS.FATAL, message);
+  }
+
+  /**
+   * Sends a debug message to the server. This will be saved to the .logs file and only visible in debug mode
+   *
+   * @param message - The debug message to send.
+   * @since 0.9.3
+   * @example
+   * deskThing.sendDebug('[spotify] Debug info: ' + debugData);
+   */
+  sendDebug(message: string): void {
+    this.send(LOGGING_LEVELS.DEBUG, message);
+  }  
+  
   /**
    * Routes request to another app running on the server.
    * Ensure that the app you are requesting data from is in your dependency array!
    *
    * @param appId - The ID of the target app.
    * @param data - The data to send to the target app.
-   *
+   * @since 0.8.0
    * @example
    * deskThing.sendDataToOtherApp('utility', { type: 'set', request: 'next', payload: { id: '' } });
    * @example
@@ -834,6 +895,7 @@ export class DeskThing {
    * })
    */
   addSettings(settings: AppSettings): void {
+    this.sendLog('Adding settings...' + settings.toString());
     if (!this.data) {
       this.data = { settings: {} };
     } else if (!this.data.settings) {
@@ -937,7 +999,9 @@ export class DeskThing {
             };
             break;
           case 'ranked':
-            if (!Array.isArray(setting.options) || !Array.isArray(setting.value)) {
+            if (!Array.isArray(setting.options) || !Array.isArray(setting.value)) {this.sendError(
+              `Ranked setting ${id} must have options and value arrays`
+            );
               throw new Error(`Ranked setting ${id} must have options and value arrays`);
             }
             this.data.settings[id] = {
@@ -1174,7 +1238,7 @@ export class DeskThing {
    * // Getting encoded spotify image data
    * const encodedImage = await deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
    *
-   * deskThing.sendMessageToAllClients({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
+   * deskThing.send({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
    */
   async encodeImageFromUrl(
     url: string,
