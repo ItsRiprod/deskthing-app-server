@@ -146,6 +146,18 @@ export interface SettingsRanked {
   options: SettingOption[]
 }
 
+export interface SettingsList {
+  type: 'list'
+  value: string[]
+  placeholder?: string
+  maxValues?: number
+  orderable?: boolean
+  unique?: boolean
+  label: string
+  description?: string
+  options: SettingOption[]
+}
+
 export interface SettingsMultiSelect {
   value: string[]
   type: 'multiselect'
@@ -160,6 +172,7 @@ export type SettingsType =
   | SettingsBoolean
   | SettingsString
   | SettingsSelect
+  | SettingsList
   | SettingsMultiSelect
   | SettingsRange
   | SettingsRanked
@@ -1010,6 +1023,18 @@ export class DeskThing {
               label: setting.label,
               description: setting.description || '',
               options: setting.options
+            };
+            break;
+          case 'list':
+            if (!Array.isArray(setting.options)) {
+              throw new Error(`List setting ${id} must have an options array`);
+            }
+            this.data.settings[id] = {
+              type: 'list',
+              value: setting.value,
+              label: setting.label,
+              description: setting.description || '',
+              options: setting.options || [],
             };
             break;
           default:
