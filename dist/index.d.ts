@@ -29,7 +29,19 @@ export type SongData = {
     device: string | null;
     id: string | null;
     device_id: string | null;
+    liked?: boolean;
+    color?: ThemeColor;
 };
+export interface ThemeColor {
+    value: number[];
+    rgb: string;
+    rgba: string;
+    hex: string;
+    hexa: string;
+    isDark: boolean;
+    isLight: boolean;
+    error?: string;
+}
 export type GetTypes = "data" | "config" | "input";
 export interface Manifest {
     type: string[];
@@ -51,6 +63,11 @@ export interface AuthScopes {
         label: string;
         value?: string;
     };
+}
+interface SettingsBase {
+    type: 'boolean' | 'list' | 'multiselect' | 'number' | 'range' | 'ranked' | 'select' | 'string' | 'color';
+    label: string;
+    description?: string;
 }
 export interface SettingsNumber {
     value: number;
@@ -101,13 +118,16 @@ export interface SettingsRanked {
     description?: string;
     options: SettingOption[];
 }
+/**
+ * Not fully implemented yet!
+ */
 export interface SettingsList {
-    type: 'list';
     value: string[];
     placeholder?: string;
     maxValues?: number;
     orderable?: boolean;
     unique?: boolean;
+    type: 'list';
     label: string;
     description?: string;
     options: SettingOption[];
@@ -120,7 +140,14 @@ export interface SettingsMultiSelect {
     placeholder?: string;
     options: SettingOption[];
 }
-export type SettingsType = SettingsNumber | SettingsBoolean | SettingsString | SettingsSelect | SettingsList | SettingsMultiSelect | SettingsRange | SettingsRanked;
+export interface SettingsColor extends SettingsBase {
+    type: 'color';
+    value: string;
+    label: string;
+    description?: string;
+    placeholder?: string;
+}
+export type SettingsType = SettingsNumber | SettingsBoolean | SettingsString | SettingsSelect | SettingsMultiSelect | SettingsRange | SettingsRanked | SettingsList | SettingsColor;
 export interface AppSettings {
     [key: string]: SettingsType;
 }
@@ -142,7 +169,7 @@ export interface DataInterface {
 export type OutgoingData = {
     type: OutgoingEvent;
     request: string;
-    payload: any | AuthScopes;
+    payload: any;
 };
 export type IncomingData = {
     type: IncomingEvent;
@@ -156,6 +183,9 @@ type startData = {
     SysEvents: SysEvents;
 };
 type valueTypes = string | number | boolean;
+/**
+ * @depreciated - use EventModes instead
+ */
 export declare enum EventFlavor {
     KeyUp = 0,
     KeyDown = 1,
@@ -174,21 +204,38 @@ export type Action = {
     name?: string;
     description?: string;
     id: string;
-    value?: valueTypes;
-    value_options?: valueTypes[];
+    value?: string;
+    value_options?: string[];
     value_instructions?: string;
     icon?: string;
-    source: string;
+    source?: string;
     version: string;
+    version_code: number;
     enabled: boolean;
+    tag?: 'nav' | 'media' | 'basic';
 };
+export declare enum EventMode {
+    KeyUp = 0,
+    KeyDown = 1,
+    ScrollUp = 2,
+    ScrollDown = 3,
+    ScrollLeft = 4,
+    ScrollRight = 5,
+    SwipeUp = 6,
+    SwipeDown = 7,
+    SwipeLeft = 8,
+    SwipeRight = 9,
+    PressShort = 10,
+    PressLong = 11
+}
 export type Key = {
     id: string;
     source: string;
     description?: string;
     version: string;
     enabled: boolean;
-    flavors: EventFlavor[];
+    version_code?: number;
+    modes: EventMode[];
 };
 export type ActionCallback = {
     id: string;
@@ -603,6 +650,32 @@ export declare class DeskThing {
      *     ]
      *   }
      * })
+     * @example
+     * // Adding a list setting
+     * deskThing.addSettings({
+     *   settingsList: {
+     *      label: "Settings List",
+     *      description: "Select multiple items from the list",
+     *      type: 'list',
+     *      value: ['item1', 'item2'],
+     *      options: [
+     *          { label: 'Item1', value: 'item1' },
+     *          { label: 'Item2', value: 'item2' },
+     *          { label: 'Item3', value: 'item3' },
+     *          { label: 'Item4', value: 'item4' }
+     *      ]
+     *    }
+     * })
+     * @example
+     * // Adding a color setting
+     * deskThing.addSettings({
+     *   settingsColor: {
+     *      label: "Settings Color",
+     *      description: "Prompt the user to select a color",
+     *      type: 'color',
+     *      value: '#1ed760'
+     *    }
+     * })
      */
     addSettings(settings: AppSettings): void; /**
      * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
@@ -661,7 +734,7 @@ export declare class DeskThing {
      * @param id - The unique identifier for the key.
      * @param description - Description for the key.
      */
-    registerKey(id: string, description: string, flavors: EventFlavor[], version: string): void;
+    registerKey(id: string, description: string, modes: EventMode[], version: string): void;
     /**
      * Registers a new key with the specified identifier. This can be mapped to any action. Use a keycode to map a specific keybind.
      * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code

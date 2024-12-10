@@ -35,7 +35,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DeskThing = exports.EventFlavor = exports.LOGGING_LEVELS = void 0;
+exports.DeskThing = exports.EventMode = exports.EventFlavor = exports.LOGGING_LEVELS = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const axios_1 = __importDefault(require("axios"));
@@ -47,6 +47,9 @@ var LOGGING_LEVELS;
     LOGGING_LEVELS["ERROR"] = "error";
     LOGGING_LEVELS["FATAL"] = "fatal";
 })(LOGGING_LEVELS || (exports.LOGGING_LEVELS = LOGGING_LEVELS = {}));
+/**
+ * @depreciated - use EventModes instead
+ */
 var EventFlavor;
 (function (EventFlavor) {
     EventFlavor[EventFlavor["KeyUp"] = 0] = "KeyUp";
@@ -62,6 +65,21 @@ var EventFlavor;
     EventFlavor[EventFlavor["PressShort"] = 10] = "PressShort";
     EventFlavor[EventFlavor["PressLong"] = 11] = "PressLong";
 })(EventFlavor || (exports.EventFlavor = EventFlavor = {}));
+var EventMode;
+(function (EventMode) {
+    EventMode[EventMode["KeyUp"] = 0] = "KeyUp";
+    EventMode[EventMode["KeyDown"] = 1] = "KeyDown";
+    EventMode[EventMode["ScrollUp"] = 2] = "ScrollUp";
+    EventMode[EventMode["ScrollDown"] = 3] = "ScrollDown";
+    EventMode[EventMode["ScrollLeft"] = 4] = "ScrollLeft";
+    EventMode[EventMode["ScrollRight"] = 5] = "ScrollRight";
+    EventMode[EventMode["SwipeUp"] = 6] = "SwipeUp";
+    EventMode[EventMode["SwipeDown"] = 7] = "SwipeDown";
+    EventMode[EventMode["SwipeLeft"] = 8] = "SwipeLeft";
+    EventMode[EventMode["SwipeRight"] = 9] = "SwipeRight";
+    EventMode[EventMode["PressShort"] = 10] = "PressShort";
+    EventMode[EventMode["PressLong"] = 11] = "PressLong";
+})(EventMode || (exports.EventMode = EventMode = {}));
 /**
  * The DeskThing class is the main class for the DeskThing library. This should only be used on the server side of your application
  */
@@ -670,6 +688,32 @@ class DeskThing {
      *     ]
      *   }
      * })
+     * @example
+     * // Adding a list setting
+     * deskThing.addSettings({
+     *   settingsList: {
+     *      label: "Settings List",
+     *      description: "Select multiple items from the list",
+     *      type: 'list',
+     *      value: ['item1', 'item2'],
+     *      options: [
+     *          { label: 'Item1', value: 'item1' },
+     *          { label: 'Item2', value: 'item2' },
+     *          { label: 'Item3', value: 'item3' },
+     *          { label: 'Item4', value: 'item4' }
+     *      ]
+     *    }
+     * })
+     * @example
+     * // Adding a color setting
+     * deskThing.addSettings({
+     *   settingsColor: {
+     *      label: "Settings Color",
+     *      description: "Prompt the user to select a color",
+     *      type: 'color',
+     *      value: '#1ed760'
+     *    }
+     * })
      */
     addSettings(settings) {
         var _a;
@@ -795,6 +839,14 @@ class DeskThing {
                             options: setting.options || [],
                         };
                         break;
+                    case 'color':
+                        this.data.settings[id] = {
+                            type: 'color',
+                            value: setting.value,
+                            label: setting.label,
+                            description: setting.description || ''
+                        };
+                        break;
                     default:
                         this.sendError(`Unknown setting type: ${setting} for setting ${id}.`);
                         throw new Error(`Unknown setting type: ${setting}`);
@@ -872,8 +924,8 @@ class DeskThing {
      * @param id - The unique identifier for the key.
      * @param description - Description for the key.
      */
-    registerKey(id, description, flavors, version) {
-        this.sendData("button", { id, description, flavors, version }, "add");
+    registerKey(id, description, modes, version) {
+        this.sendData("button", { id, description, modes, version }, "add");
     }
     /**
      * Registers a new key with the specified identifier. This can be mapped to any action. Use a keycode to map a specific keybind.
@@ -886,10 +938,10 @@ class DeskThing {
         if (!key || typeof key !== "object") {
             throw new Error("Invalid key object");
         }
-        if (!key.flavors ||
-            !Array.isArray(key.flavors) ||
-            key.flavors.length === 0) {
-            throw new Error("Key must have valid flavors");
+        if (!key.modes ||
+            !Array.isArray(key.modes) ||
+            key.modes.length === 0) {
+            throw new Error("Key must have valid modes");
         }
         if (typeof key.id !== "string") {
             throw new Error("Key must have a valid id");

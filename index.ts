@@ -64,8 +64,20 @@ export type SongData = {
   thumbnail: string | null;
   device: string | null;
   id: string | null;
-  device_id: string | null;
-};
+  device_id: string | null
+  liked?: boolean
+  color?: ThemeColor
+}
+export interface ThemeColor {
+  value: number[]
+  rgb: string
+  rgba: string
+  hex: string
+  hexa: string
+  isDark: boolean
+  isLight: boolean
+  error?: string
+}
 
 // Sub-types for the 'get' event
 export type GetTypes = "data" | "config" | "input";
@@ -83,13 +95,29 @@ export interface Manifest {
   homepage?: string;
   repository?: string;
 }
+
 export interface AuthScopes {
   [key: string]: {
-    instructions: string;
-    label: string;
-    value?: string;
-  };
+    instructions: string
+    label: string
+    value?: string
+  }
 }
+interface SettingsBase {
+  type:
+    | 'boolean'
+    | 'list'
+    | 'multiselect'
+    | 'number'
+    | 'range'
+    | 'ranked'
+    | 'select'
+    | 'string'
+    | 'color'
+  label: string
+  description?: string
+}
+
 export interface SettingsNumber {
   value: number
   type: 'number'
@@ -146,13 +174,16 @@ export interface SettingsRanked {
   options: SettingOption[]
 }
 
+/**
+ * Not fully implemented yet!
+ */
 export interface SettingsList {
-  type: 'list'
   value: string[]
   placeholder?: string
   maxValues?: number
   orderable?: boolean
   unique?: boolean
+  type: 'list'
   label: string
   description?: string
   options: SettingOption[]
@@ -167,15 +198,24 @@ export interface SettingsMultiSelect {
   options: SettingOption[]
 }
 
+export interface SettingsColor extends SettingsBase {
+  type: 'color'
+  value: string
+  label: string
+  description?: string
+  placeholder?: string
+}
+
 export type SettingsType =
   | SettingsNumber
   | SettingsBoolean
   | SettingsString
   | SettingsSelect
-  | SettingsList
   | SettingsMultiSelect
   | SettingsRange
   | SettingsRanked
+  | SettingsList
+  | SettingsColor
 
 export interface AppSettings {
   [key: string]: SettingsType
@@ -206,7 +246,7 @@ export interface DataInterface {
 export type OutgoingData = {
   type: OutgoingEvent;
   request: string;
-  payload: any | AuthScopes;
+  payload: any;
 };
 export type IncomingData = {
   type: IncomingEvent;
@@ -227,6 +267,9 @@ type startData = {
 
 type valueTypes = string | number | boolean;
 
+/**
+ * @depreciated - use EventModes instead
+ */
 export enum EventFlavor {
   KeyUp,
   KeyDown,
@@ -243,26 +286,44 @@ export enum EventFlavor {
 }
 
 export type Action = {
-  name?: string; // User Readable name
-  description?: string; // User Readable description
-  id: string; // System-level ID
-  value?: valueTypes; // The value to be passed to the action. This is included when the action is triggered
-  value_options?: valueTypes[]; // The options for the value
-  value_instructions?: string; // Instructions for the user to set the value
-  icon?: string; // The name of the icon the action uses - if left blank, the action will use the icon's id
-  source: string; // The origin of the action
-  version: string; // The version of the action
-  enabled: boolean; // Whether or not the app associated with the action is enabled
-};
+  name?: string // User Readable name
+  description?: string // User Readable description
+  id: string // System-level ID
+  value?: string // The value to be passed to the action. This is included when the action is triggered
+  value_options?: string[] // The options for the value
+  value_instructions?: string // Instructions for the user to set the value
+  icon?: string // The name of the icon the action uses - if left blank, the action will use the icon's id
+  source?: string // The origin of the action
+  version: string // The version of the action
+  version_code: number // The version of the server the action is compatible with
+  enabled: boolean // Whether or not the app associated with the action is enabled
+  tag?: 'nav' | 'media' | 'basic' // Tags associated with the action
+}
+
+export enum EventMode {
+  KeyUp,
+  KeyDown,
+  ScrollUp,
+  ScrollDown,
+  ScrollLeft,
+  ScrollRight,
+  SwipeUp,
+  SwipeDown,
+  SwipeLeft,
+  SwipeRight,
+  PressShort,
+  PressLong
+}
 
 export type Key = {
-  id: string; // System-level ID
-  source: string; // The origin of the key
-  description?: string; // User Readable description
-  version: string; //  The version of the key
-  enabled: boolean; // Whether or not the app associated with the key is enabled
-  flavors: EventFlavor[]; // The flavors of the key
-};
+  id: string // System-level ID
+  source: string // The origin of the key
+  description?: string // User Readable description
+  version: string //  The version of the key
+  enabled: boolean // Whether or not the app associated with the key is enabled
+  version_code?: number // The version of the server the action is compatible with
+  modes: EventMode[] // The Modes of the key
+}
 
 export type ActionCallback = {
   id: string;
@@ -906,6 +967,32 @@ export class DeskThing {
    *     ]
    *   }
    * })
+   * @example
+   * // Adding a list setting
+   * deskThing.addSettings({
+   *   settingsList: {
+   *      label: "Settings List",
+   *      description: "Select multiple items from the list",
+   *      type: 'list',
+   *      value: ['item1', 'item2'],
+   *      options: [
+   *          { label: 'Item1', value: 'item1' },
+   *          { label: 'Item2', value: 'item2' },
+   *          { label: 'Item3', value: 'item3' },
+   *          { label: 'Item4', value: 'item4' }
+   *      ]
+   *    }
+   * })
+   * @example
+   * // Adding a color setting
+   * deskThing.addSettings({
+   *   settingsColor: {
+   *      label: "Settings Color",
+   *      description: "Prompt the user to select a color",
+   *      type: 'color',
+   *      value: '#1ed760'
+   *    }
+   * })
    */
   addSettings(settings: AppSettings): void {
     this.sendLog('Adding settings...' + settings.toString());
@@ -1037,6 +1124,14 @@ export class DeskThing {
               options: setting.options || [],
             };
             break;
+          case 'color':
+            this.data.settings[id] = {
+              type: 'color',
+              value: setting.value,
+              label: setting.label,
+              description: setting.description || ''
+            };
+            break;
           default:
             this.sendError(
               `Unknown setting type: ${setting} for setting ${id}.`
@@ -1130,10 +1225,10 @@ export class DeskThing {
   registerKey(
     id: string,
     description: string,
-    flavors: EventFlavor[],
+    modes: EventMode[],
     version: string
   ): void {
-    this.sendData("button", { id, description, flavors, version }, "add");
+    this.sendData("button", { id, description, modes, version }, "add");
   }
 
   /**
@@ -1149,11 +1244,11 @@ export class DeskThing {
     }
 
     if (
-      !key.flavors ||
-      !Array.isArray(key.flavors) ||
-      key.flavors.length === 0
+      !key.modes ||
+      !Array.isArray(key.modes) ||
+      key.modes.length === 0
     ) {
-      throw new Error("Key must have valid flavors");
+      throw new Error("Key must have valid modes");
     }
     if (typeof key.id !== "string") {
       throw new Error("Key must have a valid id");
