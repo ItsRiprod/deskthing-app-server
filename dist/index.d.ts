@@ -65,13 +65,13 @@ export interface AuthScopes {
     };
 }
 interface SettingsBase {
-    type: 'boolean' | 'list' | 'multiselect' | 'number' | 'range' | 'ranked' | 'select' | 'string' | 'color';
+    type: "boolean" | "list" | "multiselect" | "number" | "range" | "ranked" | "select" | "string" | "color";
     label: string;
     description?: string;
 }
 export interface SettingsNumber {
     value: number;
-    type: 'number';
+    type: "number";
     min: number;
     max: number;
     label: string;
@@ -79,13 +79,13 @@ export interface SettingsNumber {
 }
 export interface SettingsBoolean {
     value: boolean;
-    type: 'boolean';
+    type: "boolean";
     label: string;
     description?: string;
 }
 export interface SettingsRange {
     value: number;
-    type: 'range';
+    type: "range";
     label: string;
     min: number;
     max: number;
@@ -94,14 +94,14 @@ export interface SettingsRange {
 }
 export interface SettingsString {
     value: string;
-    type: 'string';
+    type: "string";
     label: string;
     maxLength?: number;
     description?: string;
 }
 export interface SettingsSelect {
     value: string;
-    type: 'select';
+    type: "select";
     label: string;
     description?: string;
     placeholder?: string;
@@ -113,7 +113,7 @@ export type SettingOption = {
 };
 export interface SettingsRanked {
     value: string[];
-    type: 'ranked';
+    type: "ranked";
     label: string;
     description?: string;
     options: SettingOption[];
@@ -127,21 +127,21 @@ export interface SettingsList {
     maxValues?: number;
     orderable?: boolean;
     unique?: boolean;
-    type: 'list';
+    type: "list";
     label: string;
     description?: string;
     options: SettingOption[];
 }
 export interface SettingsMultiSelect {
     value: string[];
-    type: 'multiselect';
+    type: "multiselect";
     label: string;
     description?: string;
     placeholder?: string;
     options: SettingOption[];
 }
 export interface SettingsColor extends SettingsBase {
-    type: 'color';
+    type: "color";
     value: string;
     label: string;
     description?: string;
@@ -212,7 +212,7 @@ export type Action = {
     version: string;
     version_code: number;
     enabled: boolean;
-    tag?: 'nav' | 'media' | 'basic';
+    tag?: "nav" | "media" | "basic";
 };
 export declare enum EventMode {
     KeyUp = 0,
@@ -247,15 +247,19 @@ export type Response = {
     statusText: string;
     request: string[];
 };
+interface ImageReference {
+    [key: string]: string;
+}
 /**
  * The DeskThing class is the main class for the DeskThing library. This should only be used on the server side of your application
  */
-export declare class DeskThing {
+export declare class DeskThingClass {
     private static instance;
     private Listeners;
     private manifest;
     private toServer;
     private SysEvents;
+    imageUrls: ImageReference;
     private sysListeners;
     private data;
     private backgroundTasks;
@@ -273,7 +277,7 @@ export declare class DeskThing {
      *   // Your code here
      * });
      */
-    static getInstance(): DeskThing;
+    static getInstance(): DeskThingClass;
     /**
      * Initializes data if it is not already set on the server.
      * This method is run internally when there is no data retrieved from the server.
@@ -304,17 +308,42 @@ export declare class DeskThing {
      * @example
      * const removeListener = deskThing.on('data', (data) => console.log(data));
      * removeListener(); // To remove the listener
+     *
      * @example
      * const removeListener = deskThing.on('start', () => console.log('App is starting));
      * removeListener(); // To remove the listener
+     *
      * @example
      * // When {type: 'get'} is received from the server
      * const removeListener = deskThing.on('get', (socketData) => console.log(socketData.payload));
      * removeListener(); // To remove the listener
+     *
      * @example
      * // When a setting is updated. Passes the updated settings object
      * const removeListener = deskThing.on('settings', (settings) => console.log(settings.some_setting.value));
      * removeListener(); // To remove the listener
+     *
+     * @example
+     * // Listening to data from the client
+     * // server
+     * deskThing.on('set', async (socketData) => {
+     *    if (socketData.request === 'loremIpsum') {
+     *      handleData(socketData.payload);
+     *    }
+     * })
+     *
+     * // client
+     * deskThing.send({ type: 'set', request: 'loremIpsum', payload: 'lorem ipsum' });
+     *
+     * @example
+     * // Listening to data from the client
+     * // server
+     * deskThing.on('doSomething', async (socketData) => {
+     *    doSomething()
+     * })
+     *
+     * // client
+     * deskThing.send({ type: 'doSomething' });
      */
     on(event: IncomingEvent, callback: DeskthingListener): () => void;
     /**
@@ -337,6 +366,7 @@ export declare class DeskThing {
      * @since 0.8.0
      * @param event - The system event to listen for.
      * @param listener - The function to call when the event occurs.
+     * @deprecated - Just dont use this lol. Its outdated
      * @returns A function to remove the listener.
      *
      * @example
@@ -348,14 +378,15 @@ export declare class DeskThing {
      * Registers a one-time listener for an incoming event. The listener will be automatically removed after the first occurrence of the event.
      *
      * @since 0.8.0
-     * @param event - The event to listen for.
+     * @param event - The event to listen for. This is either the 'type' field of SocketData or special cases like 'get' or 'start'
      * @param callback - Optional callback function. If omitted, returns a promise.
      * @returns A promise that resolves with the event data if no callback is provided.
      *
      * @example
      * deskThing.once('data').then(data => console.log('Received data:', data));
      * @example
-     * await deskThing.once('flagType');
+     * const flagType = await deskThing.once('flagType');
+     * console.log('Flag type:', flagType);
      * @example
      * await deskThing.once('flagType', someFunction);
      */
@@ -381,24 +412,52 @@ export declare class DeskThing {
      *
      * @example
      * deskThing.requestData('data');
+     *
+     * @example
+     * const scopes: AuthScopes = {
+     *    user_input: {
+     *         value: "",
+     *         label: "Placeholder User Data",
+     *         instructions:
+     *           'You can make the instructions whatever you want. You can also include HTML inline styling like <a href="https://deskthing.app/" target="_blank" style="color: lightblue;">Making Clickable Links</a>.',
+     *     },
+     * }
+     * deskThing.requestData('data');
      */
     private requestData;
     /**
-     * Public method to send data to the server.
+     * Sends data to the client for the client to listen to
      *
-     * @since 0.8.0
-     * @param event - The event type to send.
-     * @param payload - The data to send.
-     * @param request - Optional request string.
+     * @since 0.10.0
+     * @param payload - { type: string, payload: any, request?: string }
      *
      * @example
-     * deskThing.send('message', 'Hello, Server!');
+     * // Server
+     * deskThing.send({ type: 'message', payload: 'Hello from the Server!' });
+     *
+     * // Client
+     * deskThing.on('message', (data: SocketData) => {
+     *   console.log('Received message:', data.payload); // prints 'Hello from the Server!'
+     * });
      * @example
-     * deskThing.send('log', 'Hello, Server!');
+     * // Server
+     * deskThing.send({ type: 'someFancyData', payload: someDataObject });
+     *
+     * // Client
+     * deskThing.on('someFancyData', (data: SocketData) => {
+     *   const someData = data.payload;
+     * });
+     *
      * @example
-     * deskThing.send('data', {type: 'songData', payload: musicData });
+     * // Server
+     * deskThing.send({type: 'songData', payload: musicData });
+     *
+     * // Client
+     * deskThing.once('songData', (data: SocketData) => {
+     *   const musicData = data.payload as SongData;
+     * });
      */
-    send(event: OutgoingEvent, payload: any, request?: string): void;
+    send(payload: SocketData): void;
     /**
      * Sends a plain text message to the server. This will display as a gray notification on the DeskThingServer GUI
      *
@@ -419,13 +478,13 @@ export declare class DeskThing {
      */
     sendLog(log: string): void;
     /**
-   * Sends a warning to the server. This will be saved to the .logs file and be saved in the Logs on the DeskThingServer GUI
-   *
-   * @param warning - The warning message to send.
-   * @since 0.9.3
-   * @example
-   * deskThing.sendWarning('[spotify] Ensure the API keys are set!');
-   */
+     * Sends a warning to the server. This will be saved to the .logs file and be saved in the Logs on the DeskThingServer GUI
+     *
+     * @param warning - The warning message to send.
+     * @since 0.9.3
+     * @example
+     * deskThing.sendWarning('[spotify] Ensure the API keys are set!');
+     */
     sendWarning(warning: string): void;
     /**
      * Sends an error message to the server. This will show up as a red notification
@@ -471,6 +530,8 @@ export declare class DeskThing {
      * Sends structured data to the client through the server. This will be received by the webapp client. The "app" field defaults to the current app.
      *
      * @param data - The structured data to send to the client, including app, type, request, and data.
+     *
+     * @deprecated - Use DeskThing.send({ }) instead!
      *
      * @example
      * deskThing.sendDataToClient({
@@ -555,10 +616,7 @@ export declare class DeskThing {
     /**
      * Adds a new setting or overwrites an existing one. Automatically saves the new setting to the server to be persisted.
      *
-     * @param id - The unique identifier for the setting.
-     * @param label - The display label for the setting.
-     * @param defaultValue - The default value for the setting.
-     * @param options - An array of options for the setting.
+     * @param settings - An object containing the settings to add or update.
      *
      * @example
      * // Adding a boolean setting
@@ -677,7 +735,8 @@ export declare class DeskThing {
      *    }
      * })
      */
-    addSettings(settings: AppSettings): void; /**
+    addSettings(settings: AppSettings): void;
+    /**
      * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
      *
      * @param name - The name of the action.
@@ -767,6 +826,7 @@ export declare class DeskThing {
      * This is useful for tasks that need to run periodically or continuously in the background.
      *
      * @param task - The background task function to add. This function should return a Promise that resolves to a boolean or void.
+     * @param timeout - Optional timeout in milliseconds between task iterations.
      * @returns A function to cancel the background task.
      *
      * @example
@@ -791,33 +851,44 @@ export declare class DeskThing {
      *   }
      *   return false; // Continue the loop
      * });
-     */
-    addBackgroundTaskLoop(task: () => Promise<boolean | void>): () => void;
-    /**
-     * Encodes an image from a URL and returns a Promise that resolves to a base64 encoded string.
-     *
-     *
-     * @param url - The url that points directly to the image
-     * @param type - The type of image to return (jpeg for static and gif for animated)
-     * @param retries - The number of times to retry the request in case of failure. Defaults to 3.
-     * @returns Promise string that has the base64 encoded image
      *
      * @example
-     * // Getting encoded spotify image data
-     * const encodedImage = await deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
-     *
-     * deskThing.send({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
+     * // Add a background task that runs every second
+     * deskThing.addBackgroundTaskLoop(async () => {
+     *   checkForUpdates();
+     * }, 1000);
      */
+    addBackgroundTaskLoop(task: () => Promise<boolean | void>, timeout?: number): () => void;
+    /**
+    * Encodes an image from a URL and returns a Promise that resolves to a base64 encoded string.
+    *
+    *
+    * @param url - The url that points directly to the image
+    * @param type - The type of image to return (jpeg for static and gif for animated)
+    * @param retries - The number of times to retry the request in case of failure. Defaults to 3.
+    * @returns Promise string that has the base64 encoded image
+    *
+    * @example
+    * // Getting encoded spotify image data
+    * const encodedImage = await deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
+    *
+    * deskThing.send({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
+    */
     encodeImageFromUrl(url: string, type?: "jpeg" | "gif", retries?: number): Promise<string>;
     /**
+     * Saves an image from a URL to a local directory and tracks the file path
+     *
+     * @param url - The direct URL to the image or local file path
+     * @returns Promise resolving to the saved image's filename
+     */
+    saveImageReferenceFromURL(url: string): Promise<string | null>;
+    /**
+     * -------------------------------------------------------
      * Deskthing Server Functions
      */
     /**
-     * Load the manifest file and saves it locally
-     * This method is typically used internally to load configuration data.
-     *
-     * @example
-     * const manifest = deskThing.loadManifest();
+     * Fetches the manifest
+     * @returns Manifest | null
      */
     private loadManifest;
     /**
@@ -833,27 +904,39 @@ export declare class DeskThing {
      */
     getManifest(): Response;
     /**
-     * Starts the deskthing.
-     * !! This method is not intended for use in client code.
-     * @param param0
+     * @deprecated - Use DeskThing.on('start', () => {}) instead
      * @returns
      */
     start({ toServer, SysEvents }: startData): Promise<Response>;
     /**
-     * Stops background tasks, clears data, notifies listeners, and returns a response. This is used by the server to kill the program. Emits 'stop' event.
-     *
-     * !! This method is not intended for use in client code.
-     *
-     * @returns A promise that resolves with a response object.
-     *
-     * @example
-     * const response = await deskThing.stop();
-     * console.log(response.statusText);
+     * @deprecated - Use DeskThing.on('stop', () => {}) instead
+     * @returns
      */
     stop(): Promise<Response>;
+    /**
+     * @deprecated - Use DeskThing.on('purge', () => {}) instead
+     * @returns
+     */
     purge(): Promise<Response>;
     private clearCache;
-    toClient(data: IncomingData): void;
+    /**
+     * @deprecated - Use DeskThing.on('data', () => {}) instead
+     * @returns
+     */
+    toClient(data: IncomingData): Promise<void>;
 }
-declare const _default: DeskThing;
-export default _default;
+/**
+ * The main DeskThing class. Use this for all of your data and event handling.
+ *
+ * @example
+ * import DeskThing from 'deskthing-server';
+ * export { DeskThing }
+ *
+ * const handleStart = async () => {
+ *    // Your startup code here
+ * }
+ *
+ * DeskThing.on('start', handleStart);
+ */
+export declare const DeskThing: DeskThingClass;
+export {};

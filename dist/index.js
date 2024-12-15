@@ -31,14 +31,11 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DeskThing = exports.EventMode = exports.EventFlavor = exports.LOGGING_LEVELS = void 0;
+exports.DeskThing = exports.DeskThingClass = exports.EventMode = exports.EventFlavor = exports.LOGGING_LEVELS = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
-const axios_1 = __importDefault(require("axios"));
+const crypto = __importStar(require("crypto"));
 var LOGGING_LEVELS;
 (function (LOGGING_LEVELS) {
     LOGGING_LEVELS["LOG"] = "log";
@@ -83,12 +80,13 @@ var EventMode;
 /**
  * The DeskThing class is the main class for the DeskThing library. This should only be used on the server side of your application
  */
-class DeskThing {
+class DeskThingClass {
     constructor() {
         this.Listeners = {};
         this.manifest = null;
         this.toServer = null;
         this.SysEvents = null;
+        this.imageUrls = {};
         this.sysListeners = [];
         this.data = null;
         this.backgroundTasks = [];
@@ -109,7 +107,7 @@ class DeskThing {
      */
     static getInstance() {
         if (!this.instance) {
-            this.instance = new DeskThing();
+            this.instance = new DeskThingClass();
         }
         return this.instance;
     }
@@ -165,17 +163,42 @@ class DeskThing {
      * @example
      * const removeListener = deskThing.on('data', (data) => console.log(data));
      * removeListener(); // To remove the listener
+     *
      * @example
      * const removeListener = deskThing.on('start', () => console.log('App is starting));
      * removeListener(); // To remove the listener
+     *
      * @example
      * // When {type: 'get'} is received from the server
      * const removeListener = deskThing.on('get', (socketData) => console.log(socketData.payload));
      * removeListener(); // To remove the listener
+     *
      * @example
      * // When a setting is updated. Passes the updated settings object
      * const removeListener = deskThing.on('settings', (settings) => console.log(settings.some_setting.value));
      * removeListener(); // To remove the listener
+     *
+     * @example
+     * // Listening to data from the client
+     * // server
+     * deskThing.on('set', async (socketData) => {
+     *    if (socketData.request === 'loremIpsum') {
+     *      handleData(socketData.payload);
+     *    }
+     * })
+     *
+     * // client
+     * deskThing.send({ type: 'set', request: 'loremIpsum', payload: 'lorem ipsum' });
+     *
+     * @example
+     * // Listening to data from the client
+     * // server
+     * deskThing.on('doSomething', async (socketData) => {
+     *    doSomething()
+     * })
+     *
+     * // client
+     * deskThing.send({ type: 'doSomething' });
      */
     on(event, callback) {
         if (!this.Listeners[event]) {
@@ -209,6 +232,7 @@ class DeskThing {
      * @since 0.8.0
      * @param event - The system event to listen for.
      * @param listener - The function to call when the event occurs.
+     * @deprecated - Just dont use this lol. Its outdated
      * @returns A function to remove the listener.
      *
      * @example
@@ -233,14 +257,15 @@ class DeskThing {
      * Registers a one-time listener for an incoming event. The listener will be automatically removed after the first occurrence of the event.
      *
      * @since 0.8.0
-     * @param event - The event to listen for.
+     * @param event - The event to listen for. This is either the 'type' field of SocketData or special cases like 'get' or 'start'
      * @param callback - Optional callback function. If omitted, returns a promise.
      * @returns A promise that resolves with the event data if no callback is provided.
      *
      * @example
      * deskThing.once('data').then(data => console.log('Received data:', data));
      * @example
-     * await deskThing.once('flagType');
+     * const flagType = await deskThing.once('flagType');
+     * console.log('Flag type:', flagType);
      * @example
      * await deskThing.once('flagType', someFunction);
      */
@@ -296,28 +321,56 @@ class DeskThing {
      *
      * @example
      * deskThing.requestData('data');
+     *
+     * @example
+     * const scopes: AuthScopes = {
+     *    user_input: {
+     *         value: "",
+     *         label: "Placeholder User Data",
+     *         instructions:
+     *           'You can make the instructions whatever you want. You can also include HTML inline styling like <a href="https://deskthing.app/" target="_blank" style="color: lightblue;">Making Clickable Links</a>.',
+     *     },
+     * }
+     * deskThing.requestData('data');
      */
     requestData(request, scopes) {
         const authScopes = scopes || {};
         this.sendData("get", authScopes, request);
     }
     /**
-     * Public method to send data to the server.
+     * Sends data to the client for the client to listen to
      *
-     * @since 0.8.0
-     * @param event - The event type to send.
-     * @param payload - The data to send.
-     * @param request - Optional request string.
+     * @since 0.10.0
+     * @param payload - { type: string, payload: any, request?: string }
      *
      * @example
-     * deskThing.send('message', 'Hello, Server!');
+     * // Server
+     * deskThing.send({ type: 'message', payload: 'Hello from the Server!' });
+     *
+     * // Client
+     * deskThing.on('message', (data: SocketData) => {
+     *   console.log('Received message:', data.payload); // prints 'Hello from the Server!'
+     * });
      * @example
-     * deskThing.send('log', 'Hello, Server!');
+     * // Server
+     * deskThing.send({ type: 'someFancyData', payload: someDataObject });
+     *
+     * // Client
+     * deskThing.on('someFancyData', (data: SocketData) => {
+     *   const someData = data.payload;
+     * });
+     *
      * @example
-     * deskThing.send('data', {type: 'songData', payload: musicData });
+     * // Server
+     * deskThing.send({type: 'songData', payload: musicData });
+     *
+     * // Client
+     * deskThing.once('songData', (data: SocketData) => {
+     *   const musicData = data.payload as SongData;
+     * });
      */
-    send(event, payload, request) {
-        this.sendData(event, payload, request);
+    send(payload) {
+        this.sendData("data", payload);
     }
     /**
      * Sends a plain text message to the server. This will display as a gray notification on the DeskThingServer GUI
@@ -329,7 +382,7 @@ class DeskThing {
      * deskThing.sendMessage('Hello, Server!');
      */
     sendMessage(message) {
-        this.send('message', message);
+        this.sendData("message", message);
     }
     /**
      * Sends a log message to the server. This will be saved to the .logs file and be saved in the Logs on the DeskThingServer GUI
@@ -340,18 +393,18 @@ class DeskThing {
      * deskThing.sendLog('[spotify] Fetching data...');
      */
     sendLog(log) {
-        this.send(LOGGING_LEVELS.LOG, log);
+        this.sendData(LOGGING_LEVELS.LOG, log);
     }
     /**
-   * Sends a warning to the server. This will be saved to the .logs file and be saved in the Logs on the DeskThingServer GUI
-   *
-   * @param warning - The warning message to send.
-   * @since 0.9.3
-   * @example
-   * deskThing.sendWarning('[spotify] Ensure the API keys are set!');
-   */
+     * Sends a warning to the server. This will be saved to the .logs file and be saved in the Logs on the DeskThingServer GUI
+     *
+     * @param warning - The warning message to send.
+     * @since 0.9.3
+     * @example
+     * deskThing.sendWarning('[spotify] Ensure the API keys are set!');
+     */
     sendWarning(warning) {
-        this.send(LOGGING_LEVELS.WARN, warning);
+        this.sendData(LOGGING_LEVELS.WARN, warning);
     }
     /**
      * Sends an error message to the server. This will show up as a red notification
@@ -362,7 +415,7 @@ class DeskThing {
      * deskThing.sendError('An error occurred!');
      */
     sendError(message) {
-        this.send(LOGGING_LEVELS.ERROR, message);
+        this.sendData(LOGGING_LEVELS.ERROR, message);
     }
     /**
      * Sends a fatal error message to the server. This will show up as a critical red notification
@@ -373,7 +426,7 @@ class DeskThing {
      * deskThing.sendFatal('Critical system failure!');
      */
     sendFatal(message) {
-        this.send(LOGGING_LEVELS.FATAL, message);
+        this.sendData(LOGGING_LEVELS.FATAL, message);
     }
     /**
      * Sends a debug message to the server. This will be saved to the .logs file and only visible in debug mode
@@ -384,7 +437,7 @@ class DeskThing {
      * deskThing.sendDebug('[spotify] Debug info: ' + debugData);
      */
     sendDebug(message) {
-        this.send(LOGGING_LEVELS.DEBUG, message);
+        this.sendData(LOGGING_LEVELS.DEBUG, message);
     }
     /**
      * Routes request to another app running on the server.
@@ -399,12 +452,14 @@ class DeskThing {
      * deskThing.sendDataToOtherApp('spotify', { type: 'get', request: 'music' });
      */
     sendDataToOtherApp(appId, payload) {
-        this.send("toApp", payload, appId);
+        this.sendData("toApp", payload, appId);
     }
     /**
      * Sends structured data to the client through the server. This will be received by the webapp client. The "app" field defaults to the current app.
      *
      * @param data - The structured data to send to the client, including app, type, request, and data.
+     *
+     * @deprecated - Use DeskThing.send({ }) instead!
      *
      * @example
      * deskThing.sendDataToClient({
@@ -425,7 +480,7 @@ class DeskThing {
      * });
      */
     sendDataToClient(data) {
-        this.send("data", data);
+        this.send(data);
     }
     /**
      * Requests the server to open a specified URL.
@@ -436,7 +491,7 @@ class DeskThing {
      * deskThing.openUrl('https://example.com');
      */
     openUrl(url) {
-        this.send("open", url);
+        this.sendData("open", url);
     }
     /**
      * Fetches data from the server if not already retrieved, otherwise returns the cached data.
@@ -593,10 +648,7 @@ class DeskThing {
     /**
      * Adds a new setting or overwrites an existing one. Automatically saves the new setting to the server to be persisted.
      *
-     * @param id - The unique identifier for the setting.
-     * @param label - The display label for the setting.
-     * @param defaultValue - The default value for the setting.
-     * @param options - An array of options for the setting.
+     * @param settings - An object containing the settings to add or update.
      *
      * @example
      * // Adding a boolean setting
@@ -717,15 +769,15 @@ class DeskThing {
      */
     addSettings(settings) {
         var _a;
-        this.sendLog('Adding settings...' + settings.toString());
+        this.sendLog("Adding settings..." + settings.toString());
         if (!this.data) {
             this.data = { settings: {} };
         }
         else if (!this.data.settings) {
             this.data.settings = {};
         }
-        if (!settings || typeof settings !== 'object') {
-            throw new Error('Settings must be a valid object');
+        if (!settings || typeof settings !== "object") {
+            throw new Error("Settings must be a valid object");
         }
         if ((_a = this.data) === null || _a === void 0 ? void 0 : _a.settings) {
             Object.keys(settings).forEach((id) => {
@@ -741,110 +793,113 @@ class DeskThing {
                     this.sendLog(`Setting with label "${setting.label}" already exists. It will be overwritten.`);
                 }
                 switch (setting.type) {
-                    case 'select':
+                    case "select":
                         if (!Array.isArray(setting.options)) {
                             throw new Error(`Select setting ${id} must have options array`);
                         }
                         this.data.settings[id] = {
-                            type: 'select',
+                            type: "select",
                             value: setting.value,
                             label: setting.label,
-                            description: setting.description || '',
-                            options: setting.options
+                            description: setting.description || "",
+                            options: setting.options,
                         };
                         break;
-                    case 'multiselect':
+                    case "multiselect":
                         if (!Array.isArray(setting.options)) {
                             throw new Error(`Multiselect setting ${id} must have options array`);
                         }
                         this.data.settings[id] = {
-                            type: 'multiselect',
+                            type: "multiselect",
                             value: setting.value,
                             label: setting.label,
-                            description: setting.description || '',
-                            options: setting.options
+                            description: setting.description || "",
+                            options: setting.options,
                         };
                         break;
-                    case 'number':
-                        if (typeof setting.min !== 'number' || typeof setting.max !== 'number') {
+                    case "number":
+                        if (typeof setting.min !== "number" ||
+                            typeof setting.max !== "number") {
                             throw new Error(`Number setting ${id} must have min and max values`);
                         }
                         this.data.settings[id] = {
-                            type: 'number',
+                            type: "number",
                             value: setting.value,
                             label: setting.label,
                             min: setting.min,
                             max: setting.max,
-                            description: setting.description || '',
+                            description: setting.description || "",
                         };
                         break;
-                    case 'boolean':
-                        if (typeof setting.value !== 'boolean') {
+                    case "boolean":
+                        if (typeof setting.value !== "boolean") {
                             throw new Error(`Boolean setting ${id} must have a boolean value`);
                         }
                         this.data.settings[id] = {
-                            type: 'boolean',
+                            type: "boolean",
                             value: setting.value,
-                            description: setting.description || '',
-                            label: setting.label
+                            description: setting.description || "",
+                            label: setting.label,
                         };
                         break;
-                    case 'string':
-                        if (typeof setting.value !== 'string') {
+                    case "string":
+                        if (typeof setting.value !== "string") {
                             throw new Error(`String setting ${id} must have a string value`);
                         }
                         this.data.settings[id] = {
-                            type: 'string',
-                            description: setting.description || '',
+                            type: "string",
+                            description: setting.description || "",
                             value: setting.value,
-                            label: setting.label
+                            label: setting.label,
                         };
                         break;
-                    case 'range':
-                        if (typeof setting.min !== 'number' || typeof setting.max !== 'number') {
+                    case "range":
+                        if (typeof setting.min !== "number" ||
+                            typeof setting.max !== "number") {
                             throw new Error(`Range setting ${id} must have min and max values`);
                         }
                         this.data.settings[id] = {
-                            type: 'range',
+                            type: "range",
                             value: setting.value,
                             label: setting.label,
                             min: setting.min,
                             max: setting.max,
                             step: setting.step || 1,
-                            description: setting.description || '',
+                            description: setting.description || "",
                         };
                         break;
-                    case 'ranked':
-                        if (!Array.isArray(setting.options) || !Array.isArray(setting.value)) {
+                    case "ranked":
+                        if (!Array.isArray(setting.options) ||
+                            !Array.isArray(setting.value)) {
                             this.sendError(`Ranked setting ${id} must have options and value arrays`);
                             throw new Error(`Ranked setting ${id} must have options and value arrays`);
                         }
                         this.data.settings[id] = {
-                            type: 'ranked',
+                            type: "ranked",
                             value: setting.value,
                             label: setting.label,
-                            description: setting.description || '',
-                            options: setting.options
+                            description: setting.description || "",
+                            options: setting.options,
                         };
                         break;
-                    case 'list':
+                    case "list":
                         if (!Array.isArray(setting.options)) {
                             throw new Error(`List setting ${id} must have an options array`);
                         }
                         this.data.settings[id] = {
-                            type: 'list',
+                            type: "list",
                             value: setting.value,
                             label: setting.label,
-                            description: setting.description || '',
+                            description: setting.description || "",
                             options: setting.options || [],
                         };
                         break;
-                    case 'color':
+                    case "color":
                         this.data.settings[id] = {
-                            type: 'color',
+                            type: "color",
                             value: setting.value,
                             label: setting.label,
-                            description: setting.description || ''
+                            description: setting.description || "",
                         };
                         break;
                     default:
@@ -855,7 +910,8 @@ class DeskThing {
             console.log("sending settings", this.data.settings);
             this.sendData("add", { settings: this.data.settings });
         }
-    } /**
+    }
+    /**
      * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
      *
      * @param name - The name of the action.
@@ -938,9 +994,7 @@ class DeskThing {
         if (!key || typeof key !== "object") {
             throw new Error("Invalid key object");
         }
-        if (!key.modes ||
-            !Array.isArray(key.modes) ||
-            key.modes.length === 0) {
+        if (!key.modes || !Array.isArray(key.modes) || key.modes.length === 0) {
             throw new Error("Key must have valid modes");
         }
         if (typeof key.id !== "string") {
@@ -981,6 +1035,7 @@ class DeskThing {
      * This is useful for tasks that need to run periodically or continuously in the background.
      *
      * @param task - The background task function to add. This function should return a Promise that resolves to a boolean or void.
+     * @param timeout - Optional timeout in milliseconds between task iterations.
      * @returns A function to cancel the background task.
      *
      * @example
@@ -1005,15 +1060,25 @@ class DeskThing {
      *   }
      *   return false; // Continue the loop
      * });
+     *
+     * @example
+     * // Add a background task that runs every second
+     * deskThing.addBackgroundTaskLoop(async () => {
+     *   checkForUpdates();
+     * }, 1000);
      */
-    addBackgroundTaskLoop(task) {
+    addBackgroundTaskLoop(task, timeout) {
         const cancelToken = { cancelled: false };
         const wrappedTask = () => __awaiter(this, void 0, void 0, function* () {
             let endToken = false;
             while (!cancelToken.cancelled && !endToken) {
                 endToken = (yield task()) || false;
+                if (timeout) {
+                    yield new Promise((resolve) => setTimeout(resolve, timeout));
+                }
             }
         });
+        // Pushes the 'remove task' task to the background tasks array
         this.backgroundTasks.push(() => {
             cancelToken.cancelled = true;
         });
@@ -1023,77 +1088,157 @@ class DeskThing {
         };
     }
     /**
-     * Encodes an image from a URL and returns a Promise that resolves to a base64 encoded string.
-     *
-     *
-     * @param url - The url that points directly to the image
-     * @param type - The type of image to return (jpeg for static and gif for animated)
-     * @param retries - The number of times to retry the request in case of failure. Defaults to 3.
-     * @returns Promise string that has the base64 encoded image
-     *
-     * @example
-     * // Getting encoded spotify image data
-     * const encodedImage = await deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
-     *
-     * deskThing.send({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
-     */
+    * Encodes an image from a URL and returns a Promise that resolves to a base64 encoded string.
+    *
+    *
+    * @param url - The url that points directly to the image
+    * @param type - The type of image to return (jpeg for static and gif for animated)
+    * @param retries - The number of times to retry the request in case of failure. Defaults to 3.
+    * @returns Promise string that has the base64 encoded image
+    *
+    * @example
+    * // Getting encoded spotify image data
+    * const encodedImage = await deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
+    *
+    * deskThing.send({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
+    */
     encodeImageFromUrl(url_1) {
         return __awaiter(this, arguments, void 0, function* (url, type = "jpeg", retries = 3) {
             try {
                 console.log(`Fetching ${type} data...`);
-                const response = yield (0, axios_1.default)({
-                    method: "get",
-                    url,
-                    responseType: "stream",
-                });
-                let data = [];
-                response.data.on("data", (chunk) => {
-                    data.push(chunk);
-                });
-                return new Promise((resolve, reject) => {
-                    response.data.on("end", () => {
-                        const bufferData = Buffer.concat(data); // Combine all the buffer chunks
-                        const imgData = `data:image/${type};base64,${bufferData.toString("base64")}`;
-                        console.log(`Sending ${type} data`);
-                        resolve(imgData);
-                    });
-                    response.data.on("error", (error) => {
-                        console.error(`Error fetching ${type}:`, error);
-                        if (retries > 0) {
-                            console.warn(`Retrying... (${retries} attempts left)`);
-                            resolve(this.encodeImageFromUrl(url, type, retries - 1));
-                        }
-                        else {
-                            reject(error);
-                        }
-                    });
-                });
+                const response = yield fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const arrayBuffer = yield response.arrayBuffer();
+                const bufferData = Buffer.from(arrayBuffer);
+                const imgData = `data:image/${type};base64,${bufferData.toString('base64')}`;
+                console.log(`Sending ${type} data`);
+                return imgData;
             }
             catch (error) {
+                this.sendError(`Error fetching ${type}: ${url}`);
                 console.error(`Error fetching ${type}:`, error);
+                if (retries > 0) {
+                    this.sendWarning(`Retrying... (${retries} attempts left)`);
+                    return this.encodeImageFromUrl(url, type, retries - 1);
+                }
                 throw error;
             }
         });
     }
     /**
+     * Saves an image from a URL to a local directory and tracks the file path
+     *
+     * @param url - The direct URL to the image or local file path
+     * @returns Promise resolving to the saved image's filename
+     */
+    saveImageReferenceFromURL(url) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
+            // Validate URL
+            if (!url || typeof url !== "string") {
+                throw new Error("Invalid URL provided");
+            }
+            if (this.imageUrls[url]) {
+                return this.imageUrls[url];
+            }
+            try {
+                let imageBuffer;
+                let contentType;
+                // Handle local file path
+                if (url.startsWith('file://') || url.startsWith('/') || url.match(/^[a-zA-Z]:\\/)) {
+                    const localPath = url.startsWith('file://') ? url.slice(7) : url;
+                    imageBuffer = yield fs.promises.readFile(localPath);
+                    const mimeType = imageBuffer[0] === 0xFF && imageBuffer[1] === 0xD8 ? 'image/jpeg'
+                        : imageBuffer[0] === 0x89 && imageBuffer[1] === 0x50 ? 'image/png'
+                            : imageBuffer[0] === 0x47 && imageBuffer[1] === 0x49 ? 'image/gif'
+                                : 'image/jpeg';
+                    const type = { mime: mimeType };
+                    contentType = (type === null || type === void 0 ? void 0 : type.mime) || 'image/jpeg';
+                }
+                else {
+                    // Handle remote URL
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout
+                    try {
+                        const response = yield fetch(url, {
+                            signal: controller.signal,
+                            headers: {
+                                "User-Agent": "Mozilla/5.0", // Prevent potential 403 errors
+                            },
+                        });
+                        clearTimeout(timeoutId);
+                        // Check response
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        contentType = response.headers.get("content-type") || "application/octet-stream";
+                        imageBuffer = Buffer.from(yield response.arrayBuffer());
+                    }
+                    finally {
+                        clearTimeout(timeoutId);
+                    }
+                }
+                // Determine file extension from MIME type
+                let extension = ((_a = contentType.split('/').pop()) === null || _a === void 0 ? void 0 : _a.toLowerCase()) || "jpg";
+                // Default to jpg for unknown content types
+                if (extension === "unknown" || extension === "octet-stream") {
+                    extension = "jpg";
+                }
+                // Generate unique filename
+                const uniqueId = crypto.randomUUID();
+                const fileName = `${uniqueId}.${extension}`;
+                const imagePath = path.join(__dirname, "images", fileName);
+                // Ensure images directory exists
+                yield fs.promises.mkdir(path.join(__dirname, "images"), { recursive: true });
+                // Write file
+                yield fs.promises.writeFile(imagePath, imageBuffer);
+                // Track the image URL for cleanup
+                if (!this.imageUrls) {
+                    this.imageUrls = {};
+                }
+                const relativeImagePath = path.join("images", fileName);
+                this.imageUrls[url] = relativeImagePath;
+                if (!this.manifest) {
+                    this.loadManifest();
+                }
+                // Return the filename for further use
+                return `http://localhost:8891/app/${((_b = this.manifest) === null || _b === void 0 ? void 0 : _b.id) || ''}/images/${fileName}`;
+            }
+            catch (error) {
+                if (error instanceof Error) {
+                    this.sendError('encodeImageFromURL: Failed to download image! ' + error.message);
+                }
+                else {
+                    console.log('[deskthing-server] Error encoding image: ', error);
+                }
+                return null;
+            }
+        });
+    }
+    /**
+     * -------------------------------------------------------
      * Deskthing Server Functions
      */
     /**
-     * Load the manifest file and saves it locally
-     * This method is typically used internally to load configuration data.
-     *
-     * @example
-     * const manifest = deskThing.loadManifest();
+     * Fetches the manifest
+     * @returns Manifest | null
      */
     loadManifest() {
+        if (this.manifest) {
+            return this.manifest;
+        }
         const manifestPath = path.resolve(__dirname, "./manifest.json");
         try {
             const manifestData = fs.readFileSync(manifestPath, "utf-8");
             this.manifest = JSON.parse(manifestData);
+            return this.manifest;
         }
         catch (error) {
             console.error("Failed to load manifest:", error);
         }
+        return null;
     }
     /**
      * Returns the manifest in a Response structure
@@ -1132,9 +1277,7 @@ class DeskThing {
         };
     }
     /**
-     * Starts the deskthing.
-     * !! This method is not intended for use in client code.
-     * @param param0
+     * @deprecated - Use DeskThing.on('start', () => {}) instead
      * @returns
      */
     start(_a) {
@@ -1163,15 +1306,8 @@ class DeskThing {
         });
     }
     /**
-     * Stops background tasks, clears data, notifies listeners, and returns a response. This is used by the server to kill the program. Emits 'stop' event.
-     *
-     * !! This method is not intended for use in client code.
-     *
-     * @returns A promise that resolves with a response object.
-     *
-     * @example
-     * const response = await deskThing.stop();
-     * console.log(response.statusText);
+     * @deprecated - Use DeskThing.on('stop', () => {}) instead
+     * @returns
      */
     stop() {
         return __awaiter(this, void 0, void 0, function* () {
@@ -1205,6 +1341,10 @@ class DeskThing {
             };
         });
     }
+    /**
+     * @deprecated - Use DeskThing.on('purge', () => {}) instead
+     * @returns
+     */
     purge() {
         return __awaiter(this, void 0, void 0, function* () {
             try {
@@ -1246,43 +1386,72 @@ class DeskThing {
         this.backgroundTasks = [];
         this.sysListeners.forEach((removeListener) => removeListener());
         this.sysListeners = [];
+        Promise.all(Object.entries(this.imageUrls).map((_a) => __awaiter(this, [_a], void 0, function* ([url, id]) {
+            try {
+                const imagePath = path.join(__dirname, id);
+                yield fs.promises.unlink(imagePath);
+                delete this.imageUrls[url];
+            }
+            catch (err) {
+                console.warn(`Failed to delete image ${id}:`, err);
+            }
+        })));
         this.sendLog("Cache cleared");
         this.toServer = null;
     }
+    /**
+     * @deprecated - Use DeskThing.on('data', () => {}) instead
+     * @returns
+     */
     toClient(data) {
-        if (data.type === "data" && data) {
-            const payload = data.payload; // Extract the first argument as data
-            if (typeof payload === "object" && data !== null) {
-                this.saveData(payload);
+        return __awaiter(this, void 0, void 0, function* () {
+            if (data.type === "data" && data) {
+                const payload = data.payload; // Extract the first argument as data
+                if (typeof payload === "object" && data !== null) {
+                    this.saveData(payload);
+                }
+                else {
+                    console.warn("Received invalid data from server:", payload);
+                    this.sendLog("Received invalid data from server:" + payload);
+                    this.initializeData();
+                }
+            }
+            else if (data.type === "message") {
+                this.sendLog("Received message from server:" + data.payload);
+            }
+            else if (data.type === "set" &&
+                data.request === "settings" &&
+                data.payload) {
+                const { id, value } = data.payload;
+                if (this.data && this.data.settings && this.data.settings[id]) {
+                    this.sendLog(`Setting with label "${id}" changing from ${this.data.settings[id].value} to ${value}`);
+                    this.data.settings[id].value = value;
+                    this.sendData("add", { settings: this.data.settings });
+                    this.notifyListeners("settings", this.data.settings);
+                    this.notifyListeners("data", this.data);
+                }
+                else {
+                    this.sendLog(`Setting with label "${id}" not found`);
+                }
             }
             else {
-                console.warn("Received invalid data from server:", payload);
-                this.sendLog("Received invalid data from server:" + payload);
-                this.initializeData();
+                this.notifyListeners(data.type, data);
             }
-        }
-        else if (data.type === "message") {
-            this.sendLog("Received message from server:" + data.payload);
-        }
-        else if (data.type === "set" &&
-            data.request === "settings" &&
-            data.payload) {
-            const { id, value } = data.payload;
-            if (this.data && this.data.settings && this.data.settings[id]) {
-                this.sendLog(`Setting with label "${id}" changing from ${this.data.settings[id].value} to ${value}`);
-                this.data.settings[id].value = value;
-                this.sendData("add", { settings: this.data.settings });
-                this.notifyListeners("settings", this.data.settings);
-                this.notifyListeners("data", this.data);
-            }
-            else {
-                this.sendLog(`Setting with label "${id}" not found`);
-            }
-        }
-        else {
-            this.notifyListeners(data.type, data);
-        }
+        });
     }
 }
-exports.DeskThing = DeskThing;
-exports.default = DeskThing.getInstance();
+exports.DeskThingClass = DeskThingClass;
+/**
+ * The main DeskThing class. Use this for all of your data and event handling.
+ *
+ * @example
+ * import DeskThing from 'deskthing-server';
+ * export { DeskThing }
+ *
+ * const handleStart = async () => {
+ *    // Your startup code here
+ * }
+ *
+ * DeskThing.on('start', handleStart);
+ */
+exports.DeskThing = DeskThingClass.getInstance();
