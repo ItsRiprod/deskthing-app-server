@@ -20,21 +20,97 @@ export type IncomingEvent =
   | "settings";
 
 // Events that can be sent back to the server
-export type OutgoingEvent =
-  | "data"
-  | "get"
-  | "set"
-  | "add"
-  | "open"
-  | "toApp"
-  | "message"
-  | "warn"
-  | "debug"
-  | "fatal"
-  | "error"
-  | "log"
-  | "action"
-  | "button";
+// Events that can be sent back to the server
+export enum SEND_TYPES {
+  /**
+   * Default handler for unknown or unspecified data types.
+   * Will log a warning message about the unknown data type.
+   */
+  DEFAULT = 'default',
+
+  /**
+   * Retrieves data from the server. Supports multiple request types:
+   * - 'data': Gets app-specific stored data
+   * - 'config': Gets configuration (deprecated)
+   * - 'settings': Gets application settings
+   * - 'input': Requests user input via a form
+   *
+   * @example
+   * DeskThing.send(SEND_TYPES.GET, { request: 'settings' })
+   */
+  GET = 'get',
+
+  /**
+   * Sets data inside the server for your app that can be retrieved with DeskThing.getData()
+   * Data is stored persistently and can be retrieved later.
+   *
+   * @example
+   * DeskThing.send(SEND_TYPES.SET, { payload: { key: 'value' }})
+   */
+  SET = 'set',
+
+  /**
+   * Opens a URL to a specific address on the server.
+   * This gets around any CORS issues that may occur by opening in a new window.
+   * Typically used for authentication flows.
+   *
+   * @example
+   * DeskThing.send(SEND_TYPES.OPEN, { payload: 'https://someurl.com' })
+   */
+  OPEN = 'open',
+
+  /**
+   * Sends data to the front end client.
+   * Can target specific client components or send general messages.
+   * Supports sending to both the main client and specific app clients.
+   *
+   * @example
+   * DeskThing.send(SEND_TYPES.SEND, { type: 'someData', payload: 'value' })
+   */
+  SEND = 'send',
+
+  /**
+   * Sends data to another app in the system.
+   * Allows inter-app communication by specifying target app and payload.
+   * Messages are logged for debugging purposes.
+   *
+   * @example
+   * DeskThing.send(SEND_TYPES.TOAPP, { request: 'spotify', payload: { type: 'get', data: 'music' }})
+   */
+  TOAPP = 'toApp',
+
+  /**
+   * Logs messages to the system logger.
+   * Supports multiple log levels: DEBUG, ERROR, FATAL, LOGGING, MESSAGE, WARNING
+   * Messages are tagged with the source app name.
+   *
+   * @example
+   * DeskThing.send(SEND_TYPES.LOG, { request: 'ERROR', payload: 'Something went wrong' })
+   */
+  LOG = 'log',
+
+  /**
+   * Manages key mappings in the system.
+   * Supports operations: add, remove, trigger
+   * Keys can have multiple modes and are associated with specific apps.
+   *
+   * @example
+   * DeskThing.send(SEND_TYPES.KEY, { request: 'add', payload: { id: 'myKey', modes: ['default'] }})
+   */
+  KEY = 'key',
+
+  /**
+   * Manages actions in the system.
+   * Supports operations: add, remove, update, run
+   * Actions can have values, icons, and version information.
+   *
+   * @example
+   * DeskThing.send(SEND_TYPES.ACTION, { request: 'add', payload: { id: 'myAction', name: 'My Action' }})
+   */
+  ACTION = 'action'
+}
+
+
 
 export enum LOGGING_LEVELS {
   LOG = "log",
@@ -244,7 +320,7 @@ export interface DataInterface {
 }
 
 export type OutgoingData = {
-  type: OutgoingEvent;
+  type: SEND_TYPES;
   request: string;
   payload: any;
 };
@@ -391,7 +467,7 @@ export class DeskThingClass {
       if (!this.data.settings) {
         this.data.settings = {};
       }
-      this.sendData("set", this.data);
+      this.sendData(SEND_TYPES.set, this.data);
     } else {
       this.data = {
         settings: {},
@@ -572,7 +648,7 @@ export class DeskThingClass {
    * @example
    * deskThing.sendData('log', { message: 'Logging an event' });
    */
-  private sendData(event: OutgoingEvent, payload: any, request?: string): void {
+  private sendData(event: SEND_TYPES, payload: any, request?: string): void {
     if (this.toServer == null) {
       console.error("toServer is not defined");
       return;
@@ -609,7 +685,7 @@ export class DeskThingClass {
    */
   private requestData(request: GetTypes, scopes?: AuthScopes | string): void {
     const authScopes = scopes || {};
-    this.sendData("get", authScopes, request);
+    this.sendData(SEND_TYPES.GET, authScopes, request);
   }
 
   /**
@@ -645,7 +721,14 @@ export class DeskThingClass {
    * });
    */
   send(payload: SocketData): void {
-    this.sendData("data", payload);
+    this.sendData(SEND_TYPES.SEND, payload);
+  }
+
+  /**
+   * 
+   */
+  log = async (logType: LOGGING_LEVELS, message: string) => {
+
   }
 
   /**
@@ -1225,43 +1308,72 @@ export class DeskThingClass {
   /**
    * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
    *
-   * @param name - The name of the action.
-   * @param id - The unique identifier for the action. This is what will be used when it is triggered
-   * @param description - A description of the action.
-   * @param flair - Optional flair for the action (default is an empty string).
-   *
+   * @param action - The action object to register.
+   * @throws {Error} If the action object is invalid.
    * @example
-   * deskthing.addAction('Print Hello', 'printHello', 'Prints Hello to the console', '')
-   * deskthing.on('button', (data) => {
-   *      if (data.payload.id === 'printHello') {
-   *          console.log('Hello')
+   * const action = {
+   *      name: 'Like'
+   *      description: 'Likes the currently playing song'
+   *      id: 'likesong'
+   *      value: 'toggle'
+   *      value_options: ['like', 'dislike', 'toggle']
+   *      value_instructions: 'Determines whether to like, dislike, or toggle the currently liked song'
+   *      icon: 'likesongicon' // overrides "id" and instead looks in /public/icons/likesongicon.svg
+   *      version: 'v0.10.1'
+   *      version_code: 10.1
+   *      tag: 'media' 
+   * }
+   * DeskThing.addActionObject(action)
+   * DeskThing.on('action', (data) => {
+   *      if (data.payload.id === 'likesong') {
+   *          DeskThing.sendLog('Like Song value is set to: ', data.value)
+   *      }
+   * })
+   * @example
+   * // Super minimal action
+   * const action = {
+   *      id: 'trigger' // looks for icon in /public/icons/trigger.svg
+   * }
+   * DeskThing.addActionObject(action)
+   * DeskThing.on('action', (data) => {
+   *      if (data.payload.id === 'trigger') {
+   *          DeskThing.sendLog('An action was triggered!')
    *      }
    * })
    */
-  registerAction(
-    name: string,
-    id: string,
-    description: string,
-    flair: string = ""
-  ): void {
-    this.sendData("action", { name, id, description, flair }, "add");
+  registerAction(action: Action): void {
+    if (!action || typeof action !== "object") {
+      throw new Error("Invalid action object");
+    }
+
+    if (!action.id || typeof action.id !== "string") {
+      throw new Error("Action must have a valid id");
+    }
+    this.sendData("action", action, "add");
   }
   /**
    * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
    *
    * @param action - The action object to register.
    * @throws {Error} If the action object is invalid.
+   * @deprecated - Use registerAction instead.
    * @example
    * const action = {
-   *      name: 'Print Hello',
-   *      id: 'printHello',
-   *      description: 'Prints Hello to the console',
-   *      flair: ''
+   *      name: 'Like'
+   *      description: 'Likes the currently playing song'
+   *      id: 'likesong'
+   *      value: 'toggle'
+   *      value_options: ['like', 'dislike', 'toggle']
+   *      value_instructions: 'Determines whether to like, dislike, or toggle the currently liked song'
+   *      icon: 'likesong'
+   *      version: 'v0.10.1'
+   *      version_code: 10.1
+   *      tag: 'media' 
    * }
-   * deskthing.addActionObject(action)
-   * deskthing.on('button', (data) => {
-   *      if (data.payload.id === 'printHello') {
-   *          console.log('Hello')
+   * DeskThing.addActionObject(action)
+   * DeskThing.on('action', (data) => {
+   *      if (data.payload.id === 'likesong') {
+   *          DeskThing.sendLog('Like Song value is set to: ', data.value)
    *      }
    * })
    */
@@ -1295,7 +1407,7 @@ export class DeskThingClass {
    *
    * Keys can also be considered "digital" like buttons on the screen.
    * The first number in the key will be passed to the action (e.g. customAction13 with action SwitchView will switch to the 13th view )
-   *
+   * @deprecated - Use registerKey instead.
    * @param id - The unique identifier for the key.
    * @param description - Description for the key.
    */
@@ -1305,7 +1417,7 @@ export class DeskThingClass {
     modes: EventMode[],
     version: string
   ): void {
-    this.sendData("button", { id, description, modes, version }, "add");
+    this.sendData("key", { id, description, modes, version }, "add");
   }
 
   /**
@@ -1482,7 +1594,7 @@ export class DeskThingClass {
    * @param url - The direct URL to the image or local file path
    * @returns Promise resolving to the saved image's filename
    */
-    async saveImageReferenceFromURL(url: string): Promise<string | null> {
+    async saveImageReferenceFromURL(url: string, headers?: Record<string, string>): Promise<string | null> {
       // Validate URL
       if (!url || typeof url !== "string") {
         throw new Error("Invalid URL provided");
@@ -1516,6 +1628,7 @@ export class DeskThingClass {
               signal: controller.signal,
               headers: {
                 "User-Agent": "Mozilla/5.0", // Prevent potential 403 errors
+                ...headers
               },
             });
 

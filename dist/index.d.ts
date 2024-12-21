@@ -881,7 +881,7 @@ export declare class DeskThingClass {
      * @param url - The direct URL to the image or local file path
      * @returns Promise resolving to the saved image's filename
      */
-    saveImageReferenceFromURL(url: string): Promise<string | null>;
+    saveImageReferenceFromURL(url: string, headers?: Record<string, string>): Promise<string | null>;
     /**
      * -------------------------------------------------------
      * Deskthing Server Functions

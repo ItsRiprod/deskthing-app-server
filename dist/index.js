@@ -1133,7 +1133,7 @@ class DeskThingClass {
      * @param url - The direct URL to the image or local file path
      * @returns Promise resolving to the saved image's filename
      */
-    saveImageReferenceFromURL(url) {
+    saveImageReferenceFromURL(url, headers) {
         return __awaiter(this, void 0, void 0, function* () {
             var _a, _b;
             // Validate URL
@@ -1164,9 +1164,7 @@ class DeskThingClass {
                     try {
                         const response = yield fetch(url, {
                             signal: controller.signal,
-                            headers: {
-                                "User-Agent": "Mozilla/5.0", // Prevent potential 403 errors
-                            },
+                            headers: Object.assign({ "User-Agent": "Mozilla/5.0" }, headers),
                         });
                         clearTimeout(timeoutId);
                         // Check response
@@ -1179,6 +1177,9 @@ class DeskThingClass {
                     finally {
                         clearTimeout(timeoutId);
                     }
+                }
+                if (!contentType.startsWith('image/')) {
+                    throw new Error('Invalid content type: ' + contentType);
                 }
                 // Determine file extension from MIME type
                 let extension = ((_a = contentType.split('/').pop()) === null || _a === void 0 ? void 0 : _a.toLowerCase()) || "jpg";
