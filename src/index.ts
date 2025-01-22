@@ -1,27 +1,92 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
+import { Worker } from 'worker_threads';
 // Type definitions for various listeners, events, and data interfaces used in the class
 type DeskthingListener = (...args: any) => void;
 
-// Events coming from the server
-export type IncomingEvent =
-  | "message"
-  | "data"
-  | "get"
-  | "set"
-  | "callback-data"
-  | "start"
-  | "stop"
-  | "purge"
-  | "input"
-  | "action"
-  | "config"
-  | "settings";
+/**
+ * @depreciated - use {@link ServerEvent} instead and use it as an Enum
+ */
+export type IncomingEvent = {}
+
+/**
+ * Enum representing the different types of events that can be emitted by the DeskThing class.
+ * @readonly
+ * @since 0.10.4
+ * @enum {string}
+ */
+export enum ServerEvent {
+  /**
+   * @depreciated - No longer used
+   * Raw message event from the server
+   */
+  MESSAGE = "message",
+  /**
+   * Data response from getData()
+   * Triggered whenever data is updated on the server
+   * @remark Does not trigger when settings update. Use {@link ServerEvent.SETTINGS} instead
+   * */
+  DATA = "data",
+  /** 
+   * Response from get requests (data/config/settings)
+   * Only ever triggered by clients
+   * 
+   * Contains requested data from the server based on the get request type
+   */
+  GET = "get",
+  /** 
+   * Set requests are usually triggered by the client and not the server
+   * Use the "request" property to determine the type of data being returned
+   */
+  SET = "set",
+  /** 
+   * Response data from callback functions
+   * Usually from oAuth flows
+   */
+  CALLBACK_DATA = "callback-data",
+  /** 
+   * Server signals app to start
+   * Triggered when the server initializes the app
+   */
+  START = "start",
+  /** 
+   * Server signals app to stop
+   * Triggered when the server needs to shutdown the app
+   */
+  STOP = "stop",
+  /** 
+   * Server signals to purge app data
+   * Triggered when all app data should be deleted
+   */
+  PURGE = "purge",
+  /** 
+   * User input form response data
+   * Contains data submitted by users through forms
+   */
+  INPUT = "input",
+  /** 
+   * Response from user action/interaction
+   * Contains data from user-triggered events or interactions
+   * @param data.payload is the triggering {@link Action}. Use the action.id to determine the action
+   */
+  ACTION = "action",
+  /** 
+   * App configuration data (deprecated)
+   * Legacy configuration system, use SETTINGS instead
+   * @deprecated - Use {@link ServerEvent.SETTINGS} instead
+   */
+  CONFIG = "config",
+  /** 
+   * App settings data
+   * Contains current application settings and preferences
+   * Can sometimes be partial. So be warned.
+   */
+  SETTINGS = "settings"
+}
 
 // Events that can be sent back to the server
-// Events that can be sent back to the server
-export enum SEND_TYPES {
+export enum SEND_TYPES { // v0.10.4
   /**
    * Default handler for unknown or unspecified data types.
    * Will log a warning message about the unknown data type.
@@ -34,9 +99,11 @@ export enum SEND_TYPES {
    * - 'config': Gets configuration (deprecated)
    * - 'settings': Gets application settings
    * - 'input': Requests user input via a form
+   * 
+   * @remarks Use {@link DeskThing.getData}, {@link DeskThing.getConfig}, {@link DeskThing.getSettings}, or {@link DeskThing.getUserInput} instead
    *
    * @example
-   * DeskThing.send(SEND_TYPES.GET, { request: 'settings' })
+   * DeskThing.sendData(SEND_TYPES.GET, { request: 'settings' })
    */
   GET = 'get',
 
@@ -44,18 +111,33 @@ export enum SEND_TYPES {
    * Sets data inside the server for your app that can be retrieved with DeskThing.getData()
    * Data is stored persistently and can be retrieved later.
    *
+   * @remarks Use {@link DeskThing.saveData} instead
+   * 
    * @example
-   * DeskThing.send(SEND_TYPES.SET, { payload: { key: 'value' }})
+   * DeskThing.sendData(SEND_TYPES.SET, { payload: { key: 'value' }})
    */
   SET = 'set',
+
+  /**
+   * Deletes data inside the server for your app that can be retrieved with DeskThing.getData()
+   *
+   * @remarks Use {@link DeskThing.deleteSettings} or {@link DeskThing.deleteData} instead
+   *
+   * @example
+   * DeskThing.sendData(SEND_TYPES.DELETE, { payload: ['key1', 'key2'] }, "settings")
+   * DeskThing.sendData(SEND_TYPES.DELETE, { payload: ['key1', 'key2'] }, "data")
+   */
+  DELETE = 'delete',
 
   /**
    * Opens a URL to a specific address on the server.
    * This gets around any CORS issues that may occur by opening in a new window.
    * Typically used for authentication flows.
    *
+   * @remarks Use {@link DeskThing.openUrl} instead
+   * 
    * @example
-   * DeskThing.send(SEND_TYPES.OPEN, { payload: 'https://someurl.com' })
+   * DeskThing.sendData(SEND_TYPES.OPEN, { payload: 'https://someurl.com' })
    */
   OPEN = 'open',
 
@@ -64,8 +146,10 @@ export enum SEND_TYPES {
    * Can target specific client components or send general messages.
    * Supports sending to both the main client and specific app clients.
    *
+   * @remarks Use {@link DeskThing.send} instead
+   * 
    * @example
-   * DeskThing.send(SEND_TYPES.SEND, { type: 'someData', payload: 'value' })
+   * DeskThing.sendData(SEND_TYPES.SEND, { type: 'someData', payload: 'value' })
    */
   SEND = 'send',
 
@@ -74,8 +158,10 @@ export enum SEND_TYPES {
    * Allows inter-app communication by specifying target app and payload.
    * Messages are logged for debugging purposes.
    *
+   * @remarks Use {@link DeskThing.sendDataToOtherApp} instead
+   * 
    * @example
-   * DeskThing.send(SEND_TYPES.TOAPP, { request: 'spotify', payload: { type: 'get', data: 'music' }})
+   * DeskThing.sendData(SEND_TYPES.TOAPP, { request: 'spotify', payload: { type: 'get', data: 'music' }})
    */
   TOAPP = 'toApp',
 
@@ -84,8 +170,10 @@ export enum SEND_TYPES {
    * Supports multiple log levels: DEBUG, ERROR, FATAL, LOGGING, MESSAGE, WARNING
    * Messages are tagged with the source app name.
    *
+   * @remarks Use {@link DeskThing.log} instead
+   * 
    * @example
-   * DeskThing.send(SEND_TYPES.LOG, { request: 'ERROR', payload: 'Something went wrong' })
+   * DeskThing.sendData(SEND_TYPES.LOG, { request: 'ERROR', payload: 'Something went wrong' })
    */
   LOG = 'log',
 
@@ -94,8 +182,10 @@ export enum SEND_TYPES {
    * Supports operations: add, remove, trigger
    * Keys can have multiple modes and are associated with specific apps.
    *
+   * @remarks Use {@link DeskThing.registerKeyObject} instead
+   * 
    * @example
-   * DeskThing.send(SEND_TYPES.KEY, { request: 'add', payload: { id: 'myKey', modes: ['default'] }})
+   * DeskThing.sendData(SEND_TYPES.KEY, { request: 'add', payload: { id: 'myKey', modes: ['default'] }})
    */
   KEY = 'key',
 
@@ -103,21 +193,25 @@ export enum SEND_TYPES {
    * Manages actions in the system.
    * Supports operations: add, remove, update, run
    * Actions can have values, icons, and version information.
+   * 
+   * @remarks
+   * It is recommended to use {@link DeskThing.registerAction} instead of sending data directly.
    *
    * @example
-   * DeskThing.send(SEND_TYPES.ACTION, { request: 'add', payload: { id: 'myAction', name: 'My Action' }})
+   * DeskThing.sendData(SEND_TYPES.ACTION, { request: 'add', payload: { id: 'myAction', name: 'My Action' }})
    */
   ACTION = 'action'
 }
 
 
 
-export enum LOGGING_LEVELS {
-  LOG = "log",
-  DEBUG = "debug",
-  WARN = "warn",
-  ERROR = "error",
-  FATAL = "fatal",
+export enum LOGGING_LEVELS { // updated to v0.10.4
+  MESSAGE = 'message',
+  LOG = 'log',
+  WARN = 'warning',
+  ERROR = 'error',
+  DEBUG = 'debugging',
+  FATAL = 'fatal'
 }
 
 export type SongData = {
@@ -156,20 +250,62 @@ export interface ThemeColor {
 }
 
 // Sub-types for the 'get' event
-export type GetTypes = "data" | "config" | "input";
-export interface Manifest {
-  type: string[];
-  requires: Array<string>;
-  label: string;
-  version: string;
-  description?: string;
-  author?: string;
-  id: string;
-  isWebApp: boolean;
-  isLocalApp: boolean;
-  platforms: Array<string>;
-  homepage?: string;
-  repository?: string;
+export type GetTypes = "data" | "config" | "input" | "settings";
+
+/**
+ * @deprecated - use {@link AppManifest} instead
+ */
+export type Manifest = AppManifest;
+
+/**
+ * Different supported platforms for the app
+ */
+export enum PlatformTypes {
+  WINDOWS = 'windows',
+  LINUX = 'linux',
+  MAC = 'mac',
+  MAC64 = 'mac64',
+  MACARM = 'macarm',
+  ANDROID = 'android',
+  IOS = 'ios',
+  ARM64 = 'arm64',
+  X64 = 'x64'
+}
+
+/**
+ * For the manifest. Different types of tags that can be used to categorize apps
+ */
+export enum TagTypes {
+  AUDIO_SOURCE = 'audiosource',
+  SCREEN_SAVER = 'screensaver',
+  UTILITY_ONLY = 'utilityOnly',
+  WEB_APP_ONLY = 'webappOnly'
+}
+
+export interface AppManifest {
+  id: string
+  label?: string
+  requires: string[]
+  version: string
+  description?: string
+  author?: string
+  platforms?: PlatformTypes[]
+  homepage?: string
+  repository?: string
+  updateUrl?: string // Usually the same as repository
+  tags: TagTypes[]
+  requiredVersions: {
+    server: string
+    client: string
+  }
+  template?: string // Utility - only for the template to know what template was used
+  version_code?: number // deprecated
+  compatible_server?: number[] // deprecated
+  compatible_client?: number[] // deprecated
+  isAudioSource?: boolean // deprecated
+  isScreenSaver?: boolean // deprecated
+  isLocalApp?: boolean // deprecated
+  isWebApp?: boolean // deprecated
 }
 
 export interface AuthScopes {
@@ -315,8 +451,7 @@ export interface SocketData {
 }
 
 export interface DataInterface {
-  [key: string]: string | AppSettings | undefined | any[];
-  settings?: AppSettings;
+  [key: string]: any
 }
 
 export type OutgoingData = {
@@ -325,7 +460,7 @@ export type OutgoingData = {
   payload: any;
 };
 export type IncomingData = {
-  type: IncomingEvent;
+  type: ServerEvent;
   request: string;
   payload: any;
 };
@@ -344,7 +479,7 @@ type startData = {
 type valueTypes = string | number | boolean;
 
 /**
- * @depreciated - use EventModes instead
+ * @deprecated - use {@link EventMode} instead
  */
 export enum EventFlavor {
   KeyUp,
@@ -371,7 +506,7 @@ export type Action = {
   icon?: string; // The name of the icon the action uses - if left blank, the action will use the icon's id
   source?: string; // The origin of the action
   version: string; // The version of the action
-  version_code: number; // The version of the server the action is compatible with
+  version_code?: number; // (depreciated) The version of the server the action is compatible with
   enabled: boolean; // Whether or not the app associated with the action is enabled
   tag?: "nav" | "media" | "basic"; // Tags associated with the action
 };
@@ -397,7 +532,7 @@ export type Key = {
   description?: string; // User Readable description
   version: string; //  The version of the key
   enabled: boolean; // Whether or not the app associated with the key is enabled
-  version_code?: number; // The version of the server the action is compatible with
+  version_code?: number; // (depreciated) The version of the server the action is compatible with
   modes: EventMode[]; // The Modes of the key
 };
 
@@ -420,17 +555,19 @@ interface ImageReference { [key: string]: string }
  */
 export class DeskThingClass {
   private static instance: DeskThingClass;
-  private Listeners: { [key in IncomingEvent]?: DeskthingListener[] } = {};
+  private Listeners: { [key in ServerEvent]?: DeskthingListener[] } = {};
   private manifest: Manifest | null = null;
   private toServer: toServer | null = null;
   private SysEvents: SysEvents | null = null;
   public imageUrls: ImageReference = {};
   private sysListeners: DeskthingListener[] = [];
-  private data: DataInterface | null = null;
   private backgroundTasks: Array<() => void> = [];
   private isDataBeingFetched: boolean = false;
   private dataFetchQueue: Array<(data: DataInterface | null) => void> = [];
   stopRequested: boolean = false;
+
+  private data: DataInterface | null = null;
+  private settings: AppSettings | null = null;
 
   constructor() {
     this.loadManifest();
@@ -457,22 +594,24 @@ export class DeskThingClass {
    * Initializes data if it is not already set on the server.
    * This method is run internally when there is no data retrieved from the server.
    *
-   * @since 0.8.0
+   * @since 0.10.4
    * @example
    * const deskThing = DeskThing.getInstance();
    * deskThing.start({ toServer, SysEvents });
    */
   private async initializeData() {
     if (this.data) {
-      if (!this.data.settings) {
-        this.data.settings = {};
-      }
-      this.sendData(SEND_TYPES.set, this.data);
+      this.sendData(SEND_TYPES.SET, this.data);
     } else {
-      this.data = {
-        settings: {},
-      };
-      this.sendData("set", this.data);
+      this.data = { };
+      this.sendData(SEND_TYPES.SET, this.data, "data");
+    }
+
+    if (this.settings) {
+      this.sendData(SEND_TYPES.SET, this.settings, "settings");
+    } else {
+      this.settings = { }
+      this.sendData(SEND_TYPES.SET, this.settings, "settings");
     }
   }
 
@@ -485,7 +624,7 @@ export class DeskThingClass {
    * deskThing.notifyListeners('message', 'Hello, World!');
    */
   private async notifyListeners(
-    event: IncomingEvent,
+    event: ServerEvent,
     ...args: any
   ): Promise<void> {
     const callbacks = this.Listeners[event];
@@ -507,7 +646,7 @@ export class DeskThingClass {
    * removeListener(); // To remove the listener
    *
    * @example
-   * const removeListener = deskThing.on('start', () => console.log('App is starting));
+   * const removeListener = deskThing.on('start', () => console.log('App is starting'));
    * removeListener(); // To remove the listener
    *
    * @example
@@ -542,7 +681,7 @@ export class DeskThingClass {
    * // client
    * deskThing.send({ type: 'doSomething' });
    */
-  on(event: IncomingEvent, callback: DeskthingListener): () => void {
+  on(event: ServerEvent, callback: DeskthingListener): () => void {
     if (!this.Listeners[event]) {
       this.Listeners[event] = [];
     }
@@ -563,7 +702,7 @@ export class DeskThingClass {
    * deskthing.on('data', dataListener);
    * deskthing.off('data', dataListener);
    */
-  off(event: IncomingEvent, callback: DeskthingListener): void {
+  off(event: ServerEvent, callback: DeskthingListener): void {
     if (!this.Listeners[event]) {
       return;
     }
@@ -579,7 +718,7 @@ export class DeskThingClass {
    * @since 0.8.0
    * @param event - The system event to listen for.
    * @param listener - The function to call when the event occurs.
-   * @deprecated - Just dont use this lol. Its outdated
+   * @deprecated - Just don't use this lol. It's outdated
    * @returns A function to remove the listener.
    *
    * @example
@@ -617,7 +756,7 @@ export class DeskThingClass {
    * @example
    * await deskThing.once('flagType', someFunction);
    */
-  async once(event: IncomingEvent, callback?: DeskthingListener): Promise<any> {
+  async once(event: ServerEvent, callback?: DeskthingListener): Promise<any> {
     if (callback) {
       const onceWrapper = (...args: any) => {
         this.off(event, onceWrapper);
@@ -648,14 +787,14 @@ export class DeskThingClass {
    * @example
    * deskThing.sendData('log', { message: 'Logging an event' });
    */
-  private sendData(event: SEND_TYPES, payload: any, request?: string): void {
+  private sendData(event: SEND_TYPES, payload: any, request: string | void): void {
     if (this.toServer == null) {
-      console.error("toServer is not defined");
+      console.error("toServer is not defined"); // cant use deskthing erroring because toServer does not exist
       return;
     }
     const outgoingData = {
       type: event,
-      request: request || "",
+      request: request || "default",
       payload: payload,
     };
 
@@ -716,7 +855,7 @@ export class DeskThingClass {
    * deskThing.send({type: 'songData', payload: musicData });
    *
    * // Client
-   * deskThing.once('songData', (data: SocketData) => {
+   * deskThing.on('songData', (data: SocketData) => {
    *   const musicData = data.payload as SongData;
    * });
    */
@@ -727,8 +866,8 @@ export class DeskThingClass {
   /**
    * 
    */
-  log = async (logType: LOGGING_LEVELS, message: string) => {
-
+  log = async (logType: LOGGING_LEVELS, message: string): Promise<void> => {
+    this.sendData(SEND_TYPES.LOG, message, logType);
   }
 
   /**
@@ -736,13 +875,14 @@ export class DeskThingClass {
    *
    * @since 0.8.0
    * @param message - The message to send to the server.
-   * @deprecated - Use sendLog or sendWarning instead
+   * @deprecated - Use {@link DeskThing.sendLog} or {@link DeskThing.sendWarning} instead
    * @example
    * deskThing.sendMessage('Hello, Server!');
    */
   sendMessage(message: string): void {
-    this.sendData("message", message);
+    this.log(LOGGING_LEVELS.MESSAGE, message);
   }
+
 
   /**
    * Sends a log message to the server. This will be saved to the .logs file and be saved in the Logs on the DeskThingServer GUI
@@ -753,7 +893,7 @@ export class DeskThingClass {
    * deskThing.sendLog('[spotify] Fetching data...');
    */
   sendLog(log: string): void {
-    this.sendData(LOGGING_LEVELS.LOG, log);
+    this.log(LOGGING_LEVELS.LOG, log);
   }
   /**
    * Sends a warning to the server. This will be saved to the .logs file and be saved in the Logs on the DeskThingServer GUI
@@ -764,7 +904,7 @@ export class DeskThingClass {
    * deskThing.sendWarning('[spotify] Ensure the API keys are set!');
    */
   sendWarning(warning: string): void {
-    this.sendData(LOGGING_LEVELS.WARN, warning);
+    this.log(LOGGING_LEVELS.WARN, warning);
   }
 
   /**
@@ -776,7 +916,7 @@ export class DeskThingClass {
    * deskThing.sendError('An error occurred!');
    */
   sendError(message: string): void {
-    this.sendData(LOGGING_LEVELS.ERROR, message);
+    this.log(LOGGING_LEVELS.ERROR, message);
   }
 
   /**
@@ -788,7 +928,7 @@ export class DeskThingClass {
    * deskThing.sendFatal('Critical system failure!');
    */
   sendFatal(message: string): void {
-    this.sendData(LOGGING_LEVELS.FATAL, message);
+    this.log(LOGGING_LEVELS.FATAL, message);
   }
 
   /**
@@ -800,7 +940,7 @@ export class DeskThingClass {
    * deskThing.sendDebug('[spotify] Debug info: ' + debugData);
    */
   sendDebug(message: string): void {
-    this.sendData(LOGGING_LEVELS.DEBUG, message);
+    this.log(LOGGING_LEVELS.DEBUG, message);
   }
 
   /**
@@ -816,7 +956,7 @@ export class DeskThingClass {
    * deskThing.sendDataToOtherApp('spotify', { type: 'get', request: 'music' });
    */
   sendDataToOtherApp(appId: string, payload: OutgoingData): void {
-    this.sendData("toApp", payload, appId);
+    this.sendData(SEND_TYPES.TOAPP, payload, appId);
   }
 
   /**
@@ -824,24 +964,24 @@ export class DeskThingClass {
    *
    * @param data - The structured data to send to the client, including app, type, request, and data.
    *
-   * @deprecated - Use DeskThing.send({ }) instead!
+   * @deprecated - Use {@link DeskThing.send} instead!
    *
    * @example
-   * deskThing.sendDataToClient({
+   * deskThing.send({
    *   app: 'client',
    *   type: 'set',
    *   request: 'next',
-   *   data: { key: 'value' }
+   *   payload: { key: 'value' }
    * });
    * @example
-   * deskThing.sendDataToClient({
+   * deskThing.send({
    *   type: 'songData',
-   *   data: songData
+   *   payload: songData
    * });
    * @example
-   * deskThing.sendDataToClient({
+   * deskThing.send({
    *   type: 'callStatus',
-   *   data: callData
+   *   payload: callData
    * });
    */
   sendDataToClient(data: SocketData): void {
@@ -857,7 +997,7 @@ export class DeskThingClass {
    * deskThing.openUrl('https://example.com');
    */
   openUrl(url: string): void {
-    this.sendData("open", url);
+    this.sendData(SEND_TYPES.OPEN, url);
   }
 
   /**
@@ -873,7 +1013,7 @@ export class DeskThingClass {
   async getData(): Promise<DataInterface | null> {
     if (!this.data) {
       if (this.isDataBeingFetched) {
-        console.warn("Data is already being fetched!!");
+        this.sendWarning("Data is already being fetched!!");
         return new Promise((resolve) => {
           this.dataFetchQueue.push(resolve);
         });
@@ -882,8 +1022,8 @@ export class DeskThingClass {
       this.requestData("data");
       try {
         const data = await Promise.race([
-          this.once("data"),
-          new Promise((resolve) => setTimeout(() => resolve(null), 5000)), // Adjust timeout as needed
+          this.once(ServerEvent.DATA),
+          new Promise((resolve) => setTimeout(() => resolve(null), 2000)), // Adjust timeout as needed
         ]);
 
         this.isDataBeingFetched = false;
@@ -906,11 +1046,20 @@ export class DeskThingClass {
           }
         }
       } catch (error) {
-        this.sendLog(`Error fetching data: ${error}`);
+        this.sendWarning(`Error fetching data: ${error}`);
         this.isDataBeingFetched = false;
 
-        this.dataFetchQueue.forEach((resolve) => resolve(this.data));
-        this.dataFetchQueue = [];
+        if (this.data) {
+          this.sendLog("Failed to fetch data, but data was found");
+          this.dataFetchQueue.forEach((resolve) => resolve(this.data));
+          this.dataFetchQueue = [];
+          return this.data;
+        } else {
+          this.dataFetchQueue.forEach((resolve) => resolve(null));
+          this.dataFetchQueue = [];
+          this.sendError("Data is not defined! Try restarting the app");
+          return null;
+        }
         return this.data;
       }
     } else {
@@ -925,6 +1074,7 @@ export class DeskThingClass {
    * @param name - The name of the configuration to request.
    * @returns A promise that resolves with the requested configuration or null if not found.
    *
+   * @deprecated Does not work anymore. Use settings instead
    * @example
    * deskThing.getConfig('myConfig');
    * @example
@@ -937,7 +1087,7 @@ export class DeskThingClass {
 
     // Race between the data being received and a timeout
     return await Promise.race([
-      this.once("config"),
+      this.once(ServerEvent.CONFIG),
       new Promise((resolve) =>
         setTimeout(() => {
           resolve(null);
@@ -957,17 +1107,27 @@ export class DeskThingClass {
    * console.log('Current settings:', settings);
    */
   async getSettings(): Promise<AppSettings | null> {
-    if (!this.data?.settings) {
+    if (!this.settings) {
       console.error("Settings are not defined!");
-      const data = await this.getData();
-      if (data && data.settings) {
-        return data.settings;
+      this.requestData("settings");
+        const settings = await Promise.race<AppSettings | null>([
+          this.once(ServerEvent.SETTINGS),
+          new Promise((resolve) =>
+            setTimeout(() => {
+              resolve(null);
+              this.sendLog(`Failed to fetch settings`);
+            }, 2000)
+          ),
+        ]);
+      if (settings) {
+        this.settings = settings
+        return settings;
       } else {
         this.sendLog("Settings are not defined!");
         return null;
       }
     } else {
-      return this.data.settings;
+      return this.settings;
     }
   }
 
@@ -1002,7 +1162,7 @@ export class DeskThingClass {
 
     try {
       // Wait for the 'input' event and pass the response to the callback
-      const response = await this.once("input");
+      const response = await this.once(ServerEvent.INPUT);
 
       if (callback && typeof callback === "function") {
         callback(response);
@@ -1017,6 +1177,8 @@ export class DeskThingClass {
    *
    * @param settings - An object containing the settings to add or update.
    *
+   * @remarks Use {@link DeskThing.initSettings} for the first settings call. Only use this to update settings or add them later.
+   * 
    * @example
    * // Adding a boolean setting
    * deskThing.addSettings({
@@ -1136,30 +1298,25 @@ export class DeskThingClass {
    */
   addSettings(settings: AppSettings): void {
     this.sendLog("Adding settings..." + settings.toString());
-    if (!this.data) {
-      this.data = { settings: {} };
-    } else if (!this.data.settings) {
-      this.data.settings = {};
+    if (!this.settings) {
+      this.settings = {}
     }
 
     if (!settings || typeof settings !== "object") {
       throw new Error("Settings must be a valid object");
     }
 
-    if (this.data?.settings) {
+    if (this.settings) {
       Object.keys(settings).forEach((id) => {
         const setting = settings[id];
 
-        if (!this.data?.settings) return;
+        if (!this.settings) return;
         if (!setting.type || !setting.label) {
           throw new Error(`Setting ${id} must have a type and label`);
         }
 
-        if (this.data.settings[id]) {
-          console.warn(
-            `Setting with label "${setting.label}" already exists. It will be overwritten.`
-          );
-          this.sendLog(
+        if (this.settings[id]) {
+          this.sendWarning(
             `Setting with label "${setting.label}" already exists. It will be overwritten.`
           );
         }
@@ -1169,7 +1326,7 @@ export class DeskThingClass {
             if (!Array.isArray(setting.options)) {
               throw new Error(`Select setting ${id} must have options array`);
             }
-            this.data.settings[id] = {
+            this.settings[id] = {
               type: "select",
               value: setting.value,
               label: setting.label,
@@ -1183,7 +1340,7 @@ export class DeskThingClass {
                 `Multiselect setting ${id} must have options array`
               );
             }
-            this.data.settings[id] = {
+            this.settings[id] = {
               type: "multiselect",
               value: setting.value,
               label: setting.label,
@@ -1200,7 +1357,7 @@ export class DeskThingClass {
                 `Number setting ${id} must have min and max values`
               );
             }
-            this.data.settings[id] = {
+            this.settings[id] = {
               type: "number",
               value: setting.value,
               label: setting.label,
@@ -1215,7 +1372,7 @@ export class DeskThingClass {
                 `Boolean setting ${id} must have a boolean value`
               );
             }
-            this.data.settings[id] = {
+            this.settings[id] = {
               type: "boolean",
               value: setting.value,
               description: setting.description || "",
@@ -1226,7 +1383,7 @@ export class DeskThingClass {
             if (typeof setting.value !== "string") {
               throw new Error(`String setting ${id} must have a string value`);
             }
-            this.data.settings[id] = {
+            this.settings[id] = {
               type: "string",
               description: setting.description || "",
               value: setting.value,
@@ -1242,7 +1399,7 @@ export class DeskThingClass {
                 `Range setting ${id} must have min and max values`
               );
             }
-            this.data.settings[id] = {
+            this.settings[id] = {
               type: "range",
               value: setting.value,
               label: setting.label,
@@ -1264,7 +1421,7 @@ export class DeskThingClass {
                 `Ranked setting ${id} must have options and value arrays`
               );
             }
-            this.data.settings[id] = {
+            this.settings[id] = {
               type: "ranked",
               value: setting.value,
               label: setting.label,
@@ -1276,7 +1433,7 @@ export class DeskThingClass {
             if (!Array.isArray(setting.options)) {
               throw new Error(`List setting ${id} must have an options array`);
             }
-            this.data.settings[id] = {
+            this.settings[id] = {
               type: "list",
               value: setting.value,
               label: setting.label,
@@ -1285,7 +1442,7 @@ export class DeskThingClass {
             };
             break;
           case "color":
-            this.data.settings[id] = {
+            this.settings[id] = {
               type: "color",
               value: setting.value,
               label: setting.label,
@@ -1300,11 +1457,70 @@ export class DeskThingClass {
         }
       });
 
-      console.log("sending settings", this.data.settings);
-
-      this.sendData("add", { settings: this.data.settings });
+      this.notifyListeners(ServerEvent.SETTINGS, this.settings);
+      this.sendData(SEND_TYPES.SET, this.settings, "settings");
     }
   }
+
+  /**
+   * Initializes the settings and assumes the settings provided by the server are preferred over the passed settings.
+   * Should be used for startup settings and only startup settings
+   * 
+   * @param settings The settings object
+   */
+  async initSettings(settings: AppSettings): Promise<void> {
+    if (!this.settings) {
+      await this.getSettings(); // ensures an attempt is made to get settings from the server
+    }
+    const newSettings = Object.fromEntries(
+      Object.entries(settings).filter(
+        ([key]) => !this.settings || !(key in this.settings)
+      )
+    ) as AppSettings;
+
+    this.addSettings(newSettings) // only add the new settings
+  }
+
+  /**
+   * Deletes settings from the server
+   * 
+   * @example
+   * // Delete a single setting
+   * server.deleteSetting('color');
+   */
+  async deleteSettings(settingIds: string | string[]) {
+    const deleteSettings = Array.isArray(settingIds) ? settingIds : [settingIds];
+    deleteSettings.forEach((settingId) => {
+      if (this.settings) {
+        delete this.settings[settingId];
+      }
+    })
+
+    this.notifyListeners(ServerEvent.SETTINGS, this.settings);
+    this.sendData(SEND_TYPES.DELETE, settingIds, "settings");
+  }
+
+  /**
+   * Deletes data from the server
+   * 
+   * @example
+   * // Delete a single data item
+   * server.deleteData('client_id');
+   * 
+   */
+  async deleteData(dataIds: string | string[]) {
+
+    const deleteSettings = Array.isArray(dataIds) ? dataIds : [dataIds];
+    deleteSettings.forEach((dataIds) => {
+      if (this.data) {
+        delete this.data[dataIds];
+      }
+    })
+
+    this.notifyListeners(ServerEvent.DATA, this.data);
+    this.sendData(SEND_TYPES.DELETE, dataIds, "data");
+  }
+
   /**
    * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
    *
@@ -1320,10 +1536,9 @@ export class DeskThingClass {
    *      value_instructions: 'Determines whether to like, dislike, or toggle the currently liked song'
    *      icon: 'likesongicon' // overrides "id" and instead looks in /public/icons/likesongicon.svg
    *      version: 'v0.10.1'
-   *      version_code: 10.1
    *      tag: 'media' 
    * }
-   * DeskThing.addActionObject(action)
+   * DeskThing.registerAction(action)
    * DeskThing.on('action', (data) => {
    *      if (data.payload.id === 'likesong') {
    *          DeskThing.sendLog('Like Song value is set to: ', data.value)
@@ -1334,7 +1549,7 @@ export class DeskThingClass {
    * const action = {
    *      id: 'trigger' // looks for icon in /public/icons/trigger.svg
    * }
-   * DeskThing.addActionObject(action)
+   * DeskThing.registerAction(action)
    * DeskThing.on('action', (data) => {
    *      if (data.payload.id === 'trigger') {
    *          DeskThing.sendLog('An action was triggered!')
@@ -1349,14 +1564,14 @@ export class DeskThingClass {
     if (!action.id || typeof action.id !== "string") {
       throw new Error("Action must have a valid id");
     }
-    this.sendData("action", action, "add");
+    this.sendData(SEND_TYPES.ACTION, action, "add");
   }
   /**
    * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
    *
    * @param action - The action object to register.
    * @throws {Error} If the action object is invalid.
-   * @deprecated - Use registerAction instead.
+   * @deprecated - Use {@link DeskThing.registerAction} instead.
    * @example
    * const action = {
    *      name: 'Like'
@@ -1367,10 +1582,9 @@ export class DeskThingClass {
    *      value_instructions: 'Determines whether to like, dislike, or toggle the currently liked song'
    *      icon: 'likesong'
    *      version: 'v0.10.1'
-   *      version_code: 10.1
    *      tag: 'media' 
    * }
-   * DeskThing.addActionObject(action)
+   * DeskThing.registerActionObject(action)
    * DeskThing.on('action', (data) => {
    *      if (data.payload.id === 'likesong') {
    *          DeskThing.sendLog('Like Song value is set to: ', data.value)
@@ -1378,15 +1592,7 @@ export class DeskThingClass {
    * })
    */
   registerActionObject(action: Action): void {
-    if (!action || typeof action !== "object") {
-      throw new Error("Invalid action object");
-    }
-
-    if (!action.id || typeof action.id !== "string") {
-      throw new Error("Action must have a valid id");
-    }
-
-    this.sendData("action", action, "add");
+    this.registerAction(action)
   }
   /**
    * Updates the flair of a specified action id. This can be used to update the image of the button. Flair is appended to the end of the action name and thus the end of the SVG path as well
@@ -1398,7 +1604,7 @@ export class DeskThingClass {
    * // Now using likeactive.svg
    */
   updateIcon(id: string, icon: string): void {
-    this.sendData("action", { id, icon }, "update");
+    this.sendData(SEND_TYPES.ACTION, { id, icon }, "update");
   }
 
   /**
@@ -1406,8 +1612,9 @@ export class DeskThingClass {
    * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code
    *
    * Keys can also be considered "digital" like buttons on the screen.
-   * The first number in the key will be passed to the action (e.g. customAction13 with action SwitchView will switch to the 13th view )
-   * @deprecated - Use registerKey instead.
+   * The first number in the key will be passed to the action
+   * @deprecated - Use {@link DeskThing.registerKeyObject} instead.
+   * @throws {Error} If the key object is invalid.
    * @param id - The unique identifier for the key.
    * @param description - Description for the key.
    */
@@ -1417,7 +1624,7 @@ export class DeskThingClass {
     modes: EventMode[],
     version: string
   ): void {
-    this.sendData("key", { id, description, modes, version }, "add");
+    this.registerKeyObject({ id, description, modes, version });
   }
 
   /**
@@ -1425,9 +1632,10 @@ export class DeskThingClass {
    * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code
    *
    * Keys can also be considered "digital" like buttons on the screen.
+   * @throws {Error} If the key object is invalid.
    * @param key - The key object to register.
    */
-  registerKeyObject(key: Key): void {
+  registerKeyObject(key: Omit<Key, 'source' | 'enabled'>): void {
     if (!key || typeof key !== "object") {
       throw new Error("Invalid key object");
     }
@@ -1439,7 +1647,7 @@ export class DeskThingClass {
       throw new Error("Key must have a valid id");
     }
 
-    this.sendData("button", key, "add");
+    this.sendData(SEND_TYPES.KEY, key, "add");
   }
 
   /**
@@ -1448,7 +1656,7 @@ export class DeskThingClass {
    * @param id - The unique identifier of the action to be removed.
    */
   removeAction(id: string): void {
-    this.sendData("action", { id }, "remove");
+    this.sendData(SEND_TYPES.ACTION, { id }, "remove");
   }
 
   /**
@@ -1457,7 +1665,7 @@ export class DeskThingClass {
    * @param id - The unique identifier of the key to be removed.
    */
   removeKey(id: string): void {
-    this.sendData("button", { id }, "remove");
+    this.sendData(SEND_TYPES.KEY, { id }, "remove");
   }
 
   /**
@@ -1466,18 +1674,35 @@ export class DeskThingClass {
    *
    * @param data - The data to be saved and merged with existing data.
    */
-  saveData(data: DataInterface): void {
-    this.data = {
-      ...this.data,
-      ...data,
-      settings: {
-        ...this.data?.settings,
-        ...data.settings,
-      },
-    };
+  saveData(data?: DataInterface, sync = true): void {
+    if (data) {
+      this.data = {
+        ...this.data,
+        ...data,
+      };
+    }
 
-    this.sendData("add", this.data);
-    this.notifyListeners("data", this.data);
+    if (data?.settings) {
+      this.sendError('[saveData] ERROR saveData() no longer saves settings! use saveSettings() instead!')
+    }
+
+    sync && this.sendData(SEND_TYPES.SET, this.data, "data");
+    this.notifyListeners(ServerEvent.DATA, this.data);
+  }
+
+  /**
+   * Typically redundant - it ensures the settings are saved to the server
+   * Triggers DeskThing.on('settings', () => void)
+   *
+   * @param data - The data to be saved and merged with existing data.
+   */
+  saveSettings(settings?: AppSettings, sync = true): void {
+    if (settings) {
+      this.addSettings(settings);
+    }
+
+    sync && this.sendData(SEND_TYPES.SET, this.data, "settings");
+    this.notifyListeners(ServerEvent.SETTINGS, this.data);
   }
 
   /**
@@ -1490,7 +1715,7 @@ export class DeskThingClass {
    *
    * @example
    * // Add a background task that logs a message every 5 seconds
-   * const cancelTask = deskThing.addBackgroundTaskLoop(async () => {
+   * const cancelTask = deskThing.scheduleTask(async () => {
    *   console.log('Performing periodic task...');
    *   await new Promise(resolve => setTimeout(resolve, 5000));
    *   return false; // Return false to continue the loop
@@ -1502,7 +1727,7 @@ export class DeskThingClass {
    * @example
    * // Add a background task that runs until a condition is met
    * let count = 0;
-   * deskThing.addBackgroundTaskLoop(async () => {
+   * deskThing.scheduleTask(async () => {
    *   console.log(`Task iteration ${++count}`);
    *   if (count >= 10) {
    *     console.log('Task completed');
@@ -1513,14 +1738,11 @@ export class DeskThingClass {
    *
    * @example
    * // Add a background task that runs every second
-   * deskThing.addBackgroundTaskLoop(async () => {
+   * deskThing.scheduleTask(async () => {
    *   checkForUpdates();
    * }, 1000);
    */
-  addBackgroundTaskLoop(
-    task: () => Promise<boolean | void>,
-    timeout?: number
-  ): () => void {
+  scheduleTask(task: () => Promise<boolean | void>, timeout?: number): () => void {
     const cancelToken = { cancelled: false };
 
     const wrappedTask = async (): Promise<void> => {
@@ -1544,6 +1766,107 @@ export class DeskThingClass {
     };
   }
 
+  /**
+   * @deprecated Use {@link DeskThing.scheduleTask} instead for repeated tasks or {@link DeskThing.addThread} for single-use long-running tasks like websockets
+   * @param task 
+   * @param timeout 
+   * @returns 
+   */
+  addBackgroundTaskLoop(
+    task: () => Promise<boolean | void>,
+    timeout?: number
+  ): () => void {
+    return this.scheduleTask(task, timeout);
+  }
+
+  /**
+   * Creates a new worker thread that runs independently and can be force-killed.
+   * Thread is automatically terminated when app closes.
+   * 
+   * @param workerPath - Path to the worker file relative to project root
+   * @returns Object containing terminate function and worker instance
+   * 
+   * @example
+   * // Main thread
+   * DeskThing.on('start', async () => {
+   *    const [ remove, worker ] = DeskThing.addThread('./workers/websocket.ts');
+   * 
+   *    worker.on('message', (data) => {
+   *      DeskThing.log(LOGGING_LEVELS.LOG, `Received message: ${data}`);
+   *    });
+   * 
+   *    worker.postMessage({ type: 'send', payload: 'Hello from the main thread!' });
+   * })
+   * // workers/websocket.ts
+   * import { parentPort } from 'worker_threads'
+   * import WebSocket from 'ws'
+   * 
+   * const ws = new WebSocket('wss://your-websocket-server.com')
+   * 
+   * ws.on('open', () => {
+   *   parentPort?.postMessage({ type: 'connected' })
+   * })
+   * 
+   * ws.on('message', (data) => {
+   *   parentPort?.postMessage({ type: 'message', data: data.toString() })
+   * })
+   * 
+   * ws.on('error', (error) => {
+   *   parentPort?.postMessage({ type: 'error', error: error.message })
+   * })
+   * 
+   * ws.on('close', () => {
+   *   parentPort?.postMessage({ type: 'disconnected' })
+   * })
+   * 
+   * // Handle messages from main thread
+   * parentPort?.on('message', (message) => {
+   *   if (message.type === 'send') {
+   *     ws.send(message.payload) // Send message to WebSocket server with content 'Hello from the main thread!'
+   *   }
+   * })
+   * 
+   */
+  addThread(workerPath: string): [ terminate: () => void, worker: Worker ] {
+  // Verify file exists
+  const resolvedPath = path.resolve(__dirname, workerPath);
+  if (!fs.existsSync(resolvedPath)) {
+    throw new Error(`Worker file not found: ${workerPath}`);
+  }
+
+  // Create worker with error handling
+  const worker = new Worker(resolvedPath);
+  
+  // Handle worker errors
+  worker.on('error', (error) => {
+    this.sendError(`Worker error: ${error.message}`);
+  });
+
+  // Handle worker exit
+  worker.on('exit', (code) => {
+    if (code !== 0) {
+      this.sendError(`Worker stopped with exit code ${code}`);
+    }
+    this.sendLog(`Worker terminated`);
+  });
+
+  const terminate = () => {
+    try {
+      worker.terminate();
+    } catch (error) {
+      if (error instanceof Error) {
+        this.sendError(`Failed to terminate worker: ${error.message}`);
+      } else {
+        this.sendError(`Failed to terminate worker: ${error}`);
+        console.error('[addThread - app]: Unknown error: ', error);
+      }
+    }
+  };
+
+  this.backgroundTasks.push(terminate);
+  return [ terminate, worker ];
+  }
+
    /**
    * Encodes an image from a URL and returns a Promise that resolves to a base64 encoded string.
    *
@@ -1562,32 +1885,61 @@ export class DeskThingClass {
    async encodeImageFromUrl(
     url: string,
     type: "jpeg" | "gif" = "jpeg",
-    retries = 3
+    headers?: Record<string, string>,
+    retries = 0,
   ): Promise<string> {
+    if (!url || typeof url !== 'string') {
+      throw new Error('Invalid URL provided');
+    }
+
     try {
-      console.log(`Fetching ${type} data...`);
-      const response = await fetch(url);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout
+
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          ...headers
+        },
+      });
       
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType?.includes('image')) {
+        throw new Error(`Invalid content type: ${contentType}. Expected image/*`);
       }
 
       const arrayBuffer = await response.arrayBuffer();
+      if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+        throw new Error('Received empty image data');
+      }
+
       const bufferData = Buffer.from(arrayBuffer);
       const imgData = `data:image/${type};base64,${bufferData.toString('base64')}`;
-      console.log(`Sending ${type} data`);
       return imgData;
 
     } catch (error) {
-      this.sendError(`Error fetching ${type}: ${url}`)
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.sendError(`Error fetching ${type} from ${url}: ${errorMessage}`);
       console.error(`Error fetching ${type}:`, error);
+      
       if (retries > 0) {
-        this.sendWarning(`Retrying... (${retries} attempts left)`);
-        return this.encodeImageFromUrl(url, type, retries - 1);
+        const delay = Math.min(1000 * (4 - retries), 3000); // Exponential backoff
+        this.sendWarning(`Retrying in ${delay/1000}s... (${retries} attempts left)`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.encodeImageFromUrl(url, type, headers, retries - 1);
       }
-      throw error;
+      
+      throw new Error(`Failed to fetch image after ${3 - retries} attempts: ${errorMessage}`);
     }
   }
+
   /**
    * Saves an image from a URL to a local directory and tracks the file path
    *
@@ -1605,58 +1957,114 @@ export class DeskThingClass {
       }
 
       try {
-        let imageBuffer: Buffer;
-        let contentType: string;
+        let imageBuffer!: Buffer;
+        let contentType!: string;
 
-        // Handle local file path
-        if (url.startsWith('file://') || url.startsWith('/') || url.match(/^[a-zA-Z]:\\/)) {
+        // Handle data URLs
+        if (url.startsWith('data:')) {
+          const matches = url.match(/^data:([a-z]+\/[a-z0-9-+.]+);base64,(.+)$/i);
+          if (!matches) {
+            throw new Error('Invalid data URL format');
+          }
+          contentType = matches[1];
+          imageBuffer = Buffer.from(matches[2], 'base64');
+        }
+        // Handle local file path with various formats
+        else if (url.startsWith('file://') || url.startsWith('/') || url.match(/^[a-zA-Z]:\\/) || url.startsWith('./') || url.startsWith('../')) {
           const localPath = url.startsWith('file://') ? url.slice(7) : url;
-          imageBuffer = await fs.promises.readFile(localPath);
-          const mimeType = imageBuffer[0] === 0xFF && imageBuffer[1] === 0xD8 ? 'image/jpeg'
-            : imageBuffer[0] === 0x89 && imageBuffer[1] === 0x50 ? 'image/png'
-            : imageBuffer[0] === 0x47 && imageBuffer[1] === 0x49 ? 'image/gif'
-            : 'image/jpeg';
-          const type = { mime: mimeType };
-          contentType = type?.mime || 'image/jpeg';
-        } else {
-          // Handle remote URL
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout
-
           try {
-            const response = await fetch(url, {
-              signal: controller.signal,
-              headers: {
-                "User-Agent": "Mozilla/5.0", // Prevent potential 403 errors
-                ...headers
-              },
-            });
+            imageBuffer = await fs.promises.readFile(localPath);
+          } catch (err) {
+            throw new Error(`Failed to read local file: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          
+          // Detect file type from magic numbers
+          let type;
+          // Fallback magic number check
+          type = imageBuffer[0] === 0xFF && imageBuffer[1] === 0xD8 ? { mime: 'image/jpeg' }
+            : imageBuffer[0] === 0x89 && imageBuffer[1] === 0x50 ? { mime: 'image/png' }
+            : imageBuffer[0] === 0x47 && imageBuffer[1] === 0x49 ? { mime: 'image/gif' }
+            : imageBuffer[0] === 0x42 && imageBuffer[1] === 0x4D ? { mime: 'image/bmp' }
+            : imageBuffer[0] === 0x00 && imageBuffer[1] === 0x00 ? { mime: 'image/webp' }
+            : { mime: 'image/jpeg' };
+          contentType = type?.mime || 'image/jpeg';        } else {
+          // Handle remote URL with retry mechanism
+          const maxRetries = 3;
+          let attempt = 0;
+          let lastError: Error | null = null;
 
-            clearTimeout(timeoutId);
+          while (attempt < maxRetries) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15-second timeout
 
-            // Check response
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
+            try {
+              const response = await fetch(url, {
+                signal: controller.signal,
+                headers: {
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                  "Accept": "image/*,*/*;q=0.8",
+                  ...headers
+                },
+              });
+
+              clearTimeout(timeoutId);
+
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
+              }
+
+              contentType = response.headers.get("content-type") || "application/octet-stream";
+              const arrayBuffer = await response.arrayBuffer();
+              
+              if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+                throw new Error('Received empty response');
+              }
+
+              imageBuffer = Buffer.from(arrayBuffer);
+              break;
+            } catch (err) {
+              lastError = err instanceof Error ? err : new Error(String(err));
+              attempt++;
+              if (attempt < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+              }
+            } finally {
+              clearTimeout(timeoutId);
             }
+          }
 
-            contentType = response.headers.get("content-type") || "application/octet-stream";
-            imageBuffer = Buffer.from(await response.arrayBuffer());
-          } finally {
-            clearTimeout(timeoutId);
+          if (!imageBuffer) {
+            throw lastError || new Error('Failed to fetch image after multiple attempts');
           }
         }
 
+        // Validate image content
         if (!contentType.startsWith('image/')) {
-          throw new Error('Invalid content type: ' + contentType);
+          // Try to detect image type from buffer
+          const detectedType = imageBuffer[0] === 0xFF && imageBuffer[1] === 0xD8 && imageBuffer[2] === 0xFF ? { mime: 'image/jpeg' }
+            : imageBuffer[0] === 0x89 && imageBuffer[1] === 0x50 && imageBuffer[2] === 0x4E && imageBuffer[3] === 0x47 ? { mime: 'image/png' }
+            : imageBuffer[0] === 0x47 && imageBuffer[1] === 0x49 && imageBuffer[2] === 0x46 ? { mime: 'image/gif' }
+            : imageBuffer[0] === 0x42 && imageBuffer[1] === 0x4D ? { mime: 'image/bmp' }
+            : imageBuffer[0] === 0x00 && imageBuffer[1] === 0x00 && imageBuffer[2] === 0x01 && imageBuffer[3] === 0x00 ? { mime: 'image/x-icon' }
+            : null;
+          
+          if (detectedType?.mime?.startsWith('image/')) {
+            contentType = detectedType.mime;
+          } else {
+            throw new Error('Invalid or unsupported content type: ' + contentType);
+          }
         }
 
         // Determine file extension from MIME type
         let extension = contentType.split('/').pop()?.toLowerCase() || "jpg";
         
-        // Default to jpg for unknown content types
-        if (extension === "unknown" || extension === "octet-stream") {
-          extension = "jpg";
-        }
+        // Handle special cases and normalize extensions
+        extension = extension === "jpeg" ? "jpg"
+          : extension === "svg+xml" ? "svg"
+          : extension === "x-icon" ? "ico"
+          : extension === "vnd.microsoft.icon" ? "ico"
+          : extension === "unknown" || extension === "octet-stream" ? "jpg"
+          : extension;
 
         // Generate unique filename
         const uniqueId = crypto.randomUUID();
@@ -1683,15 +2091,12 @@ export class DeskThingClass {
         // Return the filename for further use
         return `http://localhost:8891/app/${this.manifest?.id || ''}/images/${fileName}`;
       } catch (error) {
-        if (error instanceof Error) {
-          this.sendError('encodeImageFromURL: Failed to download image! ' + error.message)
-        } else {
-          console.log('[deskthing-server] Error encoding image: ', error)
-        }
-        return null
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        this.sendError(`[saveImageReferenceFromURL]: Failed to process image! ${errorMessage}`);
+        console.error('[deskthing-server] Error processing image:', error);
+        return null;
       }
     }  
-  
   /**
    * -------------------------------------------------------
    * Deskthing Server Functions
@@ -1755,7 +2160,7 @@ export class DeskThingClass {
   }
 
   /**
-   * @deprecated - Use DeskThing.on('start', () => {}) instead
+   * @deprecated - Use {@link DeskThing.on}('start', () => startupTasks) instead
    * @returns
    */
   async start({ toServer, SysEvents }: startData): Promise<Response> {
@@ -1764,7 +2169,7 @@ export class DeskThingClass {
     this.stopRequested = false;
 
     try {
-      await this.notifyListeners("start");
+      await this.notifyListeners(ServerEvent.START);
     } catch (error) {
       console.error("Error in start:", error);
       return {
@@ -1784,16 +2189,16 @@ export class DeskThingClass {
   }
 
   /**
-   * @deprecated - Use DeskThing.on('stop', () => {}) instead
+   * @deprecated - Use {@link DeskThing.on}('stop', () => {}) instead
    * @returns
    */
   async stop(): Promise<Response> {
     try {
       if (this.data) {
-        this.sendData("set", this.data);
+        this.saveData();
       }
       // Notify listeners of the stop event
-      await this.notifyListeners("stop");
+      await this.notifyListeners(ServerEvent.STOP);
 
       // Set flag to indicate stop request
       this.stopRequested = true;
@@ -1821,13 +2226,13 @@ export class DeskThingClass {
   }
 
   /**
-   * @deprecated - Use DeskThing.on('purge', () => {}) instead
+   * @deprecated - Use {@link DeskThing.on}('purge', () => {}) instead
    * @returns
    */
   async purge(): Promise<Response> {
     try {
       // Notify listeners of the stop event
-      await this.notifyListeners("purge");
+      await this.notifyListeners(ServerEvent.PURGE);
 
       // Set flag to indicate stop request
       this.stopRequested = true;
@@ -1882,42 +2287,38 @@ export class DeskThingClass {
   }
 
   /**
-   * @deprecated - Use DeskThing.on('data', () => {}) instead
+   * @deprecated - Use {@link DeskThing.on}('data', () => {}) instead
    * @returns
    */
   async toClient(data: IncomingData): Promise<void> {
-    if (data.type === "data" && data) {
-      const payload = data.payload; // Extract the first argument as data
-      if (typeof payload === "object" && data !== null) {
-        this.saveData(payload);
-      } else {
-        console.warn("Received invalid data from server:", payload);
-        this.sendLog("Received invalid data from server:" + payload);
-        this.initializeData();
-      }
-    } else if (data.type === "message") {
-      this.sendLog("Received message from server:" + data.payload);
-    } else if (
-      data.type === "set" &&
-      data.request === "settings" &&
-      data.payload
-    ) {
-      const { id, value } = data.payload;
 
-      if (this.data && this.data.settings && this.data.settings[id]) {
-        this.sendLog(
-          `Setting with label "${id}" changing from ${this.data.settings[id].value} to ${value}`
-        );
+    switch (data.type) {
+      case "data":
+        const payload = data.payload;
+        if (typeof payload === "object" && data !== null) {
+          this.saveData(payload, false); // ensure it only saves locally in cache
+        } else {
+          this.sendWarning("Received invalid data from server:" + payload);
+          this.initializeData();
+        }
+        break;
+      case "message":
+        this.sendLog("Received message from server:" + data.payload);
+        break;
+      case "settings":
+        this.sendLog("Received settings from server:" + data.payload);
+        if (!data.payload) {
+          this.sendLog("Received invalid settings from server:" + data.payload);
+        } else {
+          const settings: AppSettings = data.payload;
+          this.addSettings(settings);
+          this.notifyListeners(ServerEvent.DATA, this.data);
+        }
+        break;
+      default:
+        this.notifyListeners(data.type, data);
+        break;
 
-        this.data.settings[id].value = value;
-        this.sendData("add", { settings: this.data.settings });
-        this.notifyListeners("settings", this.data.settings);
-        this.notifyListeners("data", this.data);
-      } else {
-        this.sendLog(`Setting with label "${id}" not found`);
-      }
-    } else {
-      this.notifyListeners(data.type, data);
     }
   }
 }

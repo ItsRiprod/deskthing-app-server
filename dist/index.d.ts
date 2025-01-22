@@ -1,11 +1,196 @@
+import { Worker } from 'worker_threads';
 type DeskthingListener = (...args: any) => void;
-export type IncomingEvent = "message" | "data" | "get" | "set" | "callback-data" | "start" | "stop" | "purge" | "input" | "action" | "config" | "settings";
-export type OutgoingEvent = "data" | "get" | "set" | "add" | "open" | "toApp" | "message" | "warn" | "debug" | "fatal" | "error" | "log" | "action" | "button";
-export declare enum LOGGING_LEVELS {
+/**
+ * @depreciated - use {@link ServerEvent} instead and use it as an Enum
+ */
+export type IncomingEvent = {};
+/**
+ * Enum representing the different types of events that can be emitted by the DeskThing class.
+ * @readonly
+ * @since 0.10.4
+ * @enum {string}
+ */
+export declare enum ServerEvent {
+    /**
+     * @depreciated - No longer used
+     * Raw message event from the server
+     */
+    MESSAGE = "message",
+    /**
+     * Data response from getData()
+     * Triggered whenever data is updated on the server
+     * @remark Does not trigger when settings update. Use {@link ServerEvent.SETTINGS} instead
+     * */
+    DATA = "data",
+    /**
+     * Response from get requests (data/config/settings)
+     * Only ever triggered by clients
+     *
+     * Contains requested data from the server based on the get request type
+     */
+    GET = "get",
+    /**
+     * Set requests are usually triggered by the client and not the server
+     * Use the "request" property to determine the type of data being returned
+     */
+    SET = "set",
+    /**
+     * Response data from callback functions
+     * Usually from oAuth flows
+     */
+    CALLBACK_DATA = "callback-data",
+    /**
+     * Server signals app to start
+     * Triggered when the server initializes the app
+     */
+    START = "start",
+    /**
+     * Server signals app to stop
+     * Triggered when the server needs to shutdown the app
+     */
+    STOP = "stop",
+    /**
+     * Server signals to purge app data
+     * Triggered when all app data should be deleted
+     */
+    PURGE = "purge",
+    /**
+     * User input form response data
+     * Contains data submitted by users through forms
+     */
+    INPUT = "input",
+    /**
+     * Response from user action/interaction
+     * Contains data from user-triggered events or interactions
+     * @param data.payload is the triggering {@link Action}. Use the action.id to determine the action
+     */
+    ACTION = "action",
+    /**
+     * App configuration data (deprecated)
+     * Legacy configuration system, use SETTINGS instead
+     * @deprecated - Use {@link ServerEvent.SETTINGS} instead
+     */
+    CONFIG = "config",
+    /**
+     * App settings data
+     * Contains current application settings and preferences
+     * Can sometimes be partial. So be warned.
+     */
+    SETTINGS = "settings"
+}
+export declare enum SEND_TYPES {
+    /**
+     * Default handler for unknown or unspecified data types.
+     * Will log a warning message about the unknown data type.
+     */
+    DEFAULT = "default",
+    /**
+     * Retrieves data from the server. Supports multiple request types:
+     * - 'data': Gets app-specific stored data
+     * - 'config': Gets configuration (deprecated)
+     * - 'settings': Gets application settings
+     * - 'input': Requests user input via a form
+     *
+     * @remarks Use {@link DeskThing.getData}, {@link DeskThing.getConfig}, {@link DeskThing.getSettings}, or {@link DeskThing.getUserInput} instead
+     *
+     * @example
+     * DeskThing.sendData(SEND_TYPES.GET, { request: 'settings' })
+     */
+    GET = "get",
+    /**
+     * Sets data inside the server for your app that can be retrieved with DeskThing.getData()
+     * Data is stored persistently and can be retrieved later.
+     *
+     * @remarks Use {@link DeskThing.saveData} instead
+     *
+     * @example
+     * DeskThing.sendData(SEND_TYPES.SET, { payload: { key: 'value' }})
+     */
+    SET = "set",
+    /**
+     * Deletes data inside the server for your app that can be retrieved with DeskThing.getData()
+     *
+     * @remarks Use {@link DeskThing.deleteSettings} or {@link DeskThing.deleteData} instead
+     *
+     * @example
+     * DeskThing.sendData(SEND_TYPES.DELETE, { payload: ['key1', 'key2'] }, "settings")
+     * DeskThing.sendData(SEND_TYPES.DELETE, { payload: ['key1', 'key2'] }, "data")
+     */
+    DELETE = "delete",
+    /**
+     * Opens a URL to a specific address on the server.
+     * This gets around any CORS issues that may occur by opening in a new window.
+     * Typically used for authentication flows.
+     *
+     * @remarks Use {@link DeskThing.openUrl} instead
+     *
+     * @example
+     * DeskThing.sendData(SEND_TYPES.OPEN, { payload: 'https://someurl.com' })
+     */
+    OPEN = "open",
+    /**
+     * Sends data to the front end client.
+     * Can target specific client components or send general messages.
+     * Supports sending to both the main client and specific app clients.
+     *
+     * @remarks Use {@link DeskThing.send} instead
+     *
+     * @example
+     * DeskThing.sendData(SEND_TYPES.SEND, { type: 'someData', payload: 'value' })
+     */
+    SEND = "send",
+    /**
+     * Sends data to another app in the system.
+     * Allows inter-app communication by specifying target app and payload.
+     * Messages are logged for debugging purposes.
+     *
+     * @remarks Use {@link DeskThing.sendDataToOtherApp} instead
+     *
+     * @example
+     * DeskThing.sendData(SEND_TYPES.TOAPP, { request: 'spotify', payload: { type: 'get', data: 'music' }})
+     */
+    TOAPP = "toApp",
+    /**
+     * Logs messages to the system logger.
+     * Supports multiple log levels: DEBUG, ERROR, FATAL, LOGGING, MESSAGE, WARNING
+     * Messages are tagged with the source app name.
+     *
+     * @remarks Use {@link DeskThing.log} instead
+     *
+     * @example
+     * DeskThing.sendData(SEND_TYPES.LOG, { request: 'ERROR', payload: 'Something went wrong' })
+     */
     LOG = "log",
-    DEBUG = "debug",
-    WARN = "warn",
+    /**
+     * Manages key mappings in the system.
+     * Supports operations: add, remove, trigger
+     * Keys can have multiple modes and are associated with specific apps.
+     *
+     * @remarks Use {@link DeskThing.registerKeyObject} instead
+     *
+     * @example
+     * DeskThing.sendData(SEND_TYPES.KEY, { request: 'add', payload: { id: 'myKey', modes: ['default'] }})
+     */
+    KEY = "key",
+    /**
+     * Manages actions in the system.
+     * Supports operations: add, remove, update, run
+     * Actions can have values, icons, and version information.
+     *
+     * @remarks
+     * It is recommended to use {@link DeskThing.registerAction} instead of sending data directly.
+     *
+     * @example
+     * DeskThing.sendData(SEND_TYPES.ACTION, { request: 'add', payload: { id: 'myAction', name: 'My Action' }})
+     */
+    ACTION = "action"
+}
+export declare enum LOGGING_LEVELS {
+    MESSAGE = "message",
+    LOG = "log",
+    WARN = "warning",
     ERROR = "error",
+    DEBUG = "debugging",
     FATAL = "fatal"
 }
 export type SongData = {
@@ -42,20 +227,58 @@ export interface ThemeColor {
     isLight: boolean;
     error?: string;
 }
-export type GetTypes = "data" | "config" | "input";
-export interface Manifest {
-    type: string[];
-    requires: Array<string>;
-    label: string;
+export type GetTypes = "data" | "config" | "input" | "settings";
+/**
+ * @deprecated - use {@link AppManifest} instead
+ */
+export type Manifest = AppManifest;
+/**
+ * Different supported platforms for the app
+ */
+export declare enum PlatformTypes {
+    WINDOWS = "windows",
+    LINUX = "linux",
+    MAC = "mac",
+    MAC64 = "mac64",
+    MACARM = "macarm",
+    ANDROID = "android",
+    IOS = "ios",
+    ARM64 = "arm64",
+    X64 = "x64"
+}
+/**
+ * For the manifest. Different types of tags that can be used to categorize apps
+ */
+export declare enum TagTypes {
+    AUDIO_SOURCE = "audiosource",
+    SCREEN_SAVER = "screensaver",
+    UTILITY_ONLY = "utilityOnly",
+    WEB_APP_ONLY = "webappOnly"
+}
+export interface AppManifest {
+    id: string;
+    label?: string;
+    requires: string[];
     version: string;
     description?: string;
     author?: string;
-    id: string;
-    isWebApp: boolean;
-    isLocalApp: boolean;
-    platforms: Array<string>;
+    platforms?: PlatformTypes[];
     homepage?: string;
     repository?: string;
+    updateUrl?: string;
+    tags: TagTypes[];
+    requiredVersions: {
+        server: string;
+        client: string;
+    };
+    template?: string;
+    version_code?: number;
+    compatible_server?: number[];
+    compatible_client?: number[];
+    isAudioSource?: boolean;
+    isScreenSaver?: boolean;
+    isLocalApp?: boolean;
+    isWebApp?: boolean;
 }
 export interface AuthScopes {
     [key: string]: {
@@ -163,16 +386,15 @@ export interface SocketData {
     } | ActionCallback;
 }
 export interface DataInterface {
-    [key: string]: string | AppSettings | undefined | any[];
-    settings?: AppSettings;
+    [key: string]: any;
 }
 export type OutgoingData = {
-    type: OutgoingEvent;
+    type: SEND_TYPES;
     request: string;
     payload: any;
 };
 export type IncomingData = {
-    type: IncomingEvent;
+    type: ServerEvent;
     request: string;
     payload: any;
 };
@@ -184,7 +406,7 @@ type startData = {
 };
 type valueTypes = string | number | boolean;
 /**
- * @depreciated - use EventModes instead
+ * @deprecated - use {@link EventMode} instead
  */
 export declare enum EventFlavor {
     KeyUp = 0,
@@ -210,7 +432,7 @@ export type Action = {
     icon?: string;
     source?: string;
     version: string;
-    version_code: number;
+    version_code?: number;
     enabled: boolean;
     tag?: "nav" | "media" | "basic";
 };
@@ -261,11 +483,12 @@ export declare class DeskThingClass {
     private SysEvents;
     imageUrls: ImageReference;
     private sysListeners;
-    private data;
     private backgroundTasks;
     private isDataBeingFetched;
     private dataFetchQueue;
     stopRequested: boolean;
+    private data;
+    private settings;
     constructor();
     /**
      * Singleton pattern: Ensures only one instance of DeskThing exists.
@@ -282,7 +505,7 @@ export declare class DeskThingClass {
      * Initializes data if it is not already set on the server.
      * This method is run internally when there is no data retrieved from the server.
      *
-     * @since 0.8.0
+     * @since 0.10.4
      * @example
      * const deskThing = DeskThing.getInstance();
      * deskThing.start({ toServer, SysEvents });
@@ -310,7 +533,7 @@ export declare class DeskThingClass {
      * removeListener(); // To remove the listener
      *
      * @example
-     * const removeListener = deskThing.on('start', () => console.log('App is starting));
+     * const removeListener = deskThing.on('start', () => console.log('App is starting'));
      * removeListener(); // To remove the listener
      *
      * @example
@@ -345,7 +568,7 @@ export declare class DeskThingClass {
      * // client
      * deskThing.send({ type: 'doSomething' });
      */
-    on(event: IncomingEvent, callback: DeskthingListener): () => void;
+    on(event: ServerEvent, callback: DeskthingListener): () => void;
     /**
      * Removes a specific event listener for a particular incoming event.
      *
@@ -358,7 +581,7 @@ export declare class DeskThingClass {
      * deskthing.on('data', dataListener);
      * deskthing.off('data', dataListener);
      */
-    off(event: IncomingEvent, callback: DeskthingListener): void;
+    off(event: ServerEvent, callback: DeskthingListener): void;
     /**
      * Registers a system event listener. This feature is somewhat limited but allows for detecting when there are new audiosources or button mappings registered to the server.
      * Eg 'config' is emitted when the server has new button mappings or audio sources registered.
@@ -366,7 +589,7 @@ export declare class DeskThingClass {
      * @since 0.8.0
      * @param event - The system event to listen for.
      * @param listener - The function to call when the event occurs.
-     * @deprecated - Just dont use this lol. Its outdated
+     * @deprecated - Just don't use this lol. It's outdated
      * @returns A function to remove the listener.
      *
      * @example
@@ -390,7 +613,7 @@ export declare class DeskThingClass {
      * @example
      * await deskThing.once('flagType', someFunction);
      */
-    once(event: IncomingEvent, callback?: DeskthingListener): Promise<any>;
+    once(event: ServerEvent, callback?: DeskthingListener): Promise<any>;
     /**
      * Sends data to the server with a specified event type.
      *
@@ -453,17 +676,21 @@ export declare class DeskThingClass {
      * deskThing.send({type: 'songData', payload: musicData });
      *
      * // Client
-     * deskThing.once('songData', (data: SocketData) => {
+     * deskThing.on('songData', (data: SocketData) => {
      *   const musicData = data.payload as SongData;
      * });
      */
     send(payload: SocketData): void;
     /**
+     *
+     */
+    log: (logType: LOGGING_LEVELS, message: string) => Promise<void>;
+    /**
      * Sends a plain text message to the server. This will display as a gray notification on the DeskThingServer GUI
      *
      * @since 0.8.0
      * @param message - The message to send to the server.
-     * @deprecated - Use sendLog or sendWarning instead
+     * @deprecated - Use {@link DeskThing.sendLog} or {@link DeskThing.sendWarning} instead
      * @example
      * deskThing.sendMessage('Hello, Server!');
      */
@@ -531,24 +758,24 @@ export declare class DeskThingClass {
      *
      * @param data - The structured data to send to the client, including app, type, request, and data.
      *
-     * @deprecated - Use DeskThing.send({ }) instead!
+     * @deprecated - Use {@link DeskThing.send} instead!
      *
      * @example
-     * deskThing.sendDataToClient({
+     * deskThing.send({
      *   app: 'client',
      *   type: 'set',
      *   request: 'next',
-     *   data: { key: 'value' }
+     *   payload: { key: 'value' }
      * });
      * @example
-     * deskThing.sendDataToClient({
+     * deskThing.send({
      *   type: 'songData',
-     *   data: songData
+     *   payload: songData
      * });
      * @example
-     * deskThing.sendDataToClient({
+     * deskThing.send({
      *   type: 'callStatus',
-     *   data: callData
+     *   payload: callData
      * });
      */
     sendDataToClient(data: SocketData): void;
@@ -578,6 +805,7 @@ export declare class DeskThingClass {
      * @param name - The name of the configuration to request.
      * @returns A promise that resolves with the requested configuration or null if not found.
      *
+     * @deprecated Does not work anymore. Use settings instead
      * @example
      * deskThing.getConfig('myConfig');
      * @example
@@ -617,6 +845,8 @@ export declare class DeskThingClass {
      * Adds a new setting or overwrites an existing one. Automatically saves the new setting to the server to be persisted.
      *
      * @param settings - An object containing the settings to add or update.
+     *
+     * @remarks Use {@link DeskThing.initSettings} for the first settings call. Only use this to update settings or add them later.
      *
      * @example
      * // Adding a boolean setting
@@ -737,22 +967,29 @@ export declare class DeskThingClass {
      */
     addSettings(settings: AppSettings): void;
     /**
-     * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
+     * Initializes the settings and assumes the settings provided by the server are preferred over the passed settings.
+     * Should be used for startup settings and only startup settings
      *
-     * @param name - The name of the action.
-     * @param id - The unique identifier for the action. This is what will be used when it is triggered
-     * @param description - A description of the action.
-     * @param flair - Optional flair for the action (default is an empty string).
+     * @param settings The settings object
+     */
+    initSettings(settings: AppSettings): Promise<void>;
+    /**
+     * Deletes settings from the server
      *
      * @example
-     * deskthing.addAction('Print Hello', 'printHello', 'Prints Hello to the console', '')
-     * deskthing.on('button', (data) => {
-     *      if (data.payload.id === 'printHello') {
-     *          console.log('Hello')
-     *      }
-     * })
+     * // Delete a single setting
+     * server.deleteSetting('color');
      */
-    registerAction(name: string, id: string, description: string, flair?: string): void;
+    deleteSettings(settingIds: string | string[]): Promise<void>;
+    /**
+     * Deletes data from the server
+     *
+     * @example
+     * // Delete a single data item
+     * server.deleteData('client_id');
+     *
+     */
+    deleteData(dataIds: string | string[]): Promise<void>;
     /**
      * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
      *
@@ -760,15 +997,57 @@ export declare class DeskThingClass {
      * @throws {Error} If the action object is invalid.
      * @example
      * const action = {
-     *      name: 'Print Hello',
-     *      id: 'printHello',
-     *      description: 'Prints Hello to the console',
-     *      flair: ''
+     *      name: 'Like'
+     *      description: 'Likes the currently playing song'
+     *      id: 'likesong'
+     *      value: 'toggle'
+     *      value_options: ['like', 'dislike', 'toggle']
+     *      value_instructions: 'Determines whether to like, dislike, or toggle the currently liked song'
+     *      icon: 'likesongicon' // overrides "id" and instead looks in /public/icons/likesongicon.svg
+     *      version: 'v0.10.1'
+     *      tag: 'media'
      * }
-     * deskthing.addActionObject(action)
-     * deskthing.on('button', (data) => {
-     *      if (data.payload.id === 'printHello') {
-     *          console.log('Hello')
+     * DeskThing.registerAction(action)
+     * DeskThing.on('action', (data) => {
+     *      if (data.payload.id === 'likesong') {
+     *          DeskThing.sendLog('Like Song value is set to: ', data.value)
+     *      }
+     * })
+     * @example
+     * // Super minimal action
+     * const action = {
+     *      id: 'trigger' // looks for icon in /public/icons/trigger.svg
+     * }
+     * DeskThing.registerAction(action)
+     * DeskThing.on('action', (data) => {
+     *      if (data.payload.id === 'trigger') {
+     *          DeskThing.sendLog('An action was triggered!')
+     *      }
+     * })
+     */
+    registerAction(action: Action): void;
+    /**
+     * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
+     *
+     * @param action - The action object to register.
+     * @throws {Error} If the action object is invalid.
+     * @deprecated - Use {@link DeskThing.registerAction} instead.
+     * @example
+     * const action = {
+     *      name: 'Like'
+     *      description: 'Likes the currently playing song'
+     *      id: 'likesong'
+     *      value: 'toggle'
+     *      value_options: ['like', 'dislike', 'toggle']
+     *      value_instructions: 'Determines whether to like, dislike, or toggle the currently liked song'
+     *      icon: 'likesong'
+     *      version: 'v0.10.1'
+     *      tag: 'media'
+     * }
+     * DeskThing.registerActionObject(action)
+     * DeskThing.on('action', (data) => {
+     *      if (data.payload.id === 'likesong') {
+     *          DeskThing.sendLog('Like Song value is set to: ', data.value)
      *      }
      * })
      */
@@ -788,8 +1067,9 @@ export declare class DeskThingClass {
      * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code
      *
      * Keys can also be considered "digital" like buttons on the screen.
-     * The first number in the key will be passed to the action (e.g. customAction13 with action SwitchView will switch to the 13th view )
-     *
+     * The first number in the key will be passed to the action
+     * @deprecated - Use {@link DeskThing.registerKeyObject} instead.
+     * @throws {Error} If the key object is invalid.
      * @param id - The unique identifier for the key.
      * @param description - Description for the key.
      */
@@ -799,9 +1079,10 @@ export declare class DeskThingClass {
      * Possible keycodes can be found at https://www.toptal.com/developers/keycode and is listening for event.code
      *
      * Keys can also be considered "digital" like buttons on the screen.
+     * @throws {Error} If the key object is invalid.
      * @param key - The key object to register.
      */
-    registerKeyObject(key: Key): void;
+    registerKeyObject(key: Omit<Key, 'source' | 'enabled'>): void;
     /**
      * Removes an action with the specified identifier.
      *
@@ -820,7 +1101,14 @@ export declare class DeskThingClass {
      *
      * @param data - The data to be saved and merged with existing data.
      */
-    saveData(data: DataInterface): void;
+    saveData(data?: DataInterface, sync?: boolean): void;
+    /**
+     * Typically redundant - it ensures the settings are saved to the server
+     * Triggers DeskThing.on('settings', () => void)
+     *
+     * @param data - The data to be saved and merged with existing data.
+     */
+    saveSettings(settings?: AppSettings, sync?: boolean): void;
     /**
      * Adds a background task that will loop until either the task is cancelled or the task function returns false.
      * This is useful for tasks that need to run periodically or continuously in the background.
@@ -831,7 +1119,7 @@ export declare class DeskThingClass {
      *
      * @example
      * // Add a background task that logs a message every 5 seconds
-     * const cancelTask = deskThing.addBackgroundTaskLoop(async () => {
+     * const cancelTask = deskThing.scheduleTask(async () => {
      *   console.log('Performing periodic task...');
      *   await new Promise(resolve => setTimeout(resolve, 5000));
      *   return false; // Return false to continue the loop
@@ -843,7 +1131,7 @@ export declare class DeskThingClass {
      * @example
      * // Add a background task that runs until a condition is met
      * let count = 0;
-     * deskThing.addBackgroundTaskLoop(async () => {
+     * deskThing.scheduleTask(async () => {
      *   console.log(`Task iteration ${++count}`);
      *   if (count >= 10) {
      *     console.log('Task completed');
@@ -854,11 +1142,70 @@ export declare class DeskThingClass {
      *
      * @example
      * // Add a background task that runs every second
-     * deskThing.addBackgroundTaskLoop(async () => {
+     * deskThing.scheduleTask(async () => {
      *   checkForUpdates();
      * }, 1000);
      */
+    scheduleTask(task: () => Promise<boolean | void>, timeout?: number): () => void;
+    /**
+     * @deprecated Use {@link DeskThing.scheduleTask} instead for repeated tasks or {@link DeskThing.addThread} for single-use long-running tasks like websockets
+     * @param task
+     * @param timeout
+     * @returns
+     */
     addBackgroundTaskLoop(task: () => Promise<boolean | void>, timeout?: number): () => void;
+    /**
+     * Creates a new worker thread that runs independently and can be force-killed.
+     * Thread is automatically terminated when app closes.
+     *
+     * @param workerPath - Path to the worker file relative to project root
+     * @returns Object containing terminate function and worker instance
+     *
+     * @example
+     * // Main thread
+     * DeskThing.on('start', async () => {
+     *    const { worker } = DeskThing.addThread('./workers/websocket.ts');
+     *
+     *    worker.on('message', (data) => {
+     *      DeskThing.log(LOGGING_LEVELS.LOG, `Received message: ${data}`);
+     *    });
+     *
+     *    worker.postMessage({ type: 'send', payload: 'Hello from the main thread!' });
+     * })
+     * // workers/websocket.ts
+     * import { parentPort } from 'worker_threads'
+     * import WebSocket from 'ws'
+     *
+     * const ws = new WebSocket('wss://your-websocket-server.com')
+     *
+     * ws.on('open', () => {
+     *   parentPort?.postMessage({ type: 'connected' })
+     * })
+     *
+     * ws.on('message', (data) => {
+     *   parentPort?.postMessage({ type: 'message', data: data.toString() })
+     * })
+     *
+     * ws.on('error', (error) => {
+     *   parentPort?.postMessage({ type: 'error', error: error.message })
+     * })
+     *
+     * ws.on('close', () => {
+     *   parentPort?.postMessage({ type: 'disconnected' })
+     * })
+     *
+     * // Handle messages from main thread
+     * parentPort?.on('message', (message) => {
+     *   if (message.type === 'send') {
+     *     ws.send(message.payload) // Send message to WebSocket server with content 'Hello from the main thread!'
+     *   }
+     * })
+     *
+     */
+    addThread(workerPath: string): {
+        terminate: () => void;
+        worker: Worker;
+    };
     /**
     * Encodes an image from a URL and returns a Promise that resolves to a base64 encoded string.
     *
@@ -874,7 +1221,7 @@ export declare class DeskThingClass {
     *
     * deskThing.send({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
     */
-    encodeImageFromUrl(url: string, type?: "jpeg" | "gif", retries?: number): Promise<string>;
+    encodeImageFromUrl(url: string, type?: "jpeg" | "gif", headers?: Record<string, string>, retries?: number): Promise<string>;
     /**
      * Saves an image from a URL to a local directory and tracks the file path
      *
@@ -904,23 +1251,23 @@ export declare class DeskThingClass {
      */
     getManifest(): Response;
     /**
-     * @deprecated - Use DeskThing.on('start', () => {}) instead
+     * @deprecated - Use {@link DeskThing.on}('start', () => startupTasks) instead
      * @returns
      */
     start({ toServer, SysEvents }: startData): Promise<Response>;
     /**
-     * @deprecated - Use DeskThing.on('stop', () => {}) instead
+     * @deprecated - Use {@link DeskThing.on}('stop', () => {}) instead
      * @returns
      */
     stop(): Promise<Response>;
     /**
-     * @deprecated - Use DeskThing.on('purge', () => {}) instead
+     * @deprecated - Use {@link DeskThing.on}('purge', () => {}) instead
      * @returns
      */
     purge(): Promise<Response>;
     private clearCache;
     /**
-     * @deprecated - Use DeskThing.on('data', () => {}) instead
+     * @deprecated - Use {@link DeskThing.on}('data', () => {}) instead
      * @returns
      */
     toClient(data: IncomingData): Promise<void>;
