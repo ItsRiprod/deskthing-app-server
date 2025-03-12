@@ -1,6 +1,6 @@
 {
-  "name": "deskthing-server",
-  "version": "0.10.4",
+  "name": "@deskthing/server",
+  "version": "0.10.6",
   "description": "The Deskthing connector for the server apps",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -8,13 +8,18 @@
     "dist/"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "npm run build:types && npm run build:js",
+    "build:old": "tsc",
+    "build:types": "tsc --emitDeclarationOnly --outDir dist",
+    "build:js": "esbuild src/index.ts --bundle --platform=node --format=cjs --outdir=dist",
     "test": "vitest"
   },
   "author": "Riprod",
   "license": "MIT",
   "devDependencies": {
+    "@deskthing/types": "^0.10.7",
     "@types/node": "^22.2.0",
+    "esbuild": "^0.24.2",
     "typescript": "^5.5.4",
     "vitest": "^2.1.8"
   },
