@@ -1,1 +1,1 @@
-export { DeskThing, DeskThingClass } from './deskthing'
+export { DeskThing, DeskThingClass, createDeskThing } from './deskthing'

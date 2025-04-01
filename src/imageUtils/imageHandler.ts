@@ -14,14 +14,10 @@ export class ImageHandler {
   
   constructor(logger: (level: string, message: string) => void) {
     this.logger = logger;
-    if (process.env.DESKTHING_ENV == 'development') {
-        // Remove images folder if it exists
-        logger("info", "Removing images folder in development mode...");
-        const imagesDir = path.join(__dirname, "images");
-        if (fs.existsSync(imagesDir)) {
-          fs.rmSync(imagesDir, { recursive: true, force: true });
-        }
-        
+    logger("info", "Removing old autogen folder...");
+    const imagesDir = path.join(__dirname, "images", "autogen");
+    if (fs.existsSync(imagesDir)) {
+      fs.rmSync(imagesDir, { recursive: true, force: true });
     }
   }
 
@@ -49,7 +45,7 @@ export class ImageHandler {
       const fileName = await this.saveImageToDisk(buffer, extension);
       
       // Step 4: Record and return the URL
-      const imageUrl = `http://localhost:8891/gen/${appId}/images/${fileName}`;
+      const imageUrl = `http://localhost:8891/gen/${appId}/images/autogen/${fileName}`;
       this.imageUrls[url] = imageUrl;
       
       return imageUrl;
@@ -237,7 +233,7 @@ export class ImageHandler {
     const uniqueId = crypto.randomUUID();
     const fileName = `${uniqueId}.${extension}`;
     const imagesDir = path.join(__dirname, "images");
-    const imagePath = path.join(imagesDir, fileName);
+    const imagePath = path.join(imagesDir, "autogen", fileName);
 
     // Ensure images directory exists
     await fs.promises.mkdir(imagesDir, { recursive: true });

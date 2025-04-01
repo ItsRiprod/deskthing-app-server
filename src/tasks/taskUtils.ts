@@ -1,6 +1,15 @@
-import { Task, Step, STEP_TYPES, TaskAction, TaskShortcut, TaskSetting, TaskTask } from "@deskthing/types";
+import {
+  Task,
+  Step,
+  STEP_TYPES,
+  TaskAction,
+  TaskShortcut,
+  TaskSetting,
+  TaskTask,
+  SettingReference,
+  SettingsType,
+} from "@deskthing/types";
 import { isValidAction, isValidActionReference } from "../actions/actionUtils";
-
 
 export function isValidTask(task: unknown): asserts task is Task {
   if (!task || typeof task !== "object")
@@ -85,7 +94,9 @@ function validateStepBase(
   }
 }
 
-export function isValidTaskAction(step: unknown): asserts step is Extract<Step, { type: STEP_TYPES.ACTION }> {
+export function isValidTaskAction(
+  step: unknown
+): asserts step is Extract<Step, { type: STEP_TYPES.ACTION }> {
   validateStepBase(step, STEP_TYPES.ACTION);
   const s = step as Partial<Extract<Step, { type: STEP_TYPES.ACTION }>>;
 
@@ -95,10 +106,10 @@ export function isValidTaskAction(step: unknown): asserts step is Extract<Step, 
     );
   }
 
-  const action = s.action
+  const action = s.action;
 
   if (typeof action === "string") {
-    return // early break if the action is an ID of an action
+    return; // early break if the action is an ID of an action
   }
 
   if (typeof action === "object" && "version" in action) {
@@ -120,7 +131,9 @@ export function isValidTaskShortcut(
   }
 }
 
-export function isValidTaskSetting(step: unknown): asserts step is Extract<Step, { type: STEP_TYPES.TASK }> {
+export function isValidTaskSetting(
+  step: unknown
+): asserts step is Extract<Step, { type: STEP_TYPES.TASK }> {
   validateStepBase(step, STEP_TYPES.SETTING);
   const s = step as Partial<Extract<Step, { type: STEP_TYPES.SETTING }>>;
 
@@ -130,7 +143,10 @@ export function isValidTaskSetting(step: unknown): asserts step is Extract<Step,
     );
   }
 
-  if (typeof s.setting === 'string') {
+  if (!("type" in s.setting)) {
+
+    if (!s.setting.id) throw new Error(`[ValidateTaskSetting] Setting reference does not have an id`);
+
     return; // early break for string settings
   }
 
@@ -145,6 +161,7 @@ export function isValidTaskSetting(step: unknown): asserts step is Extract<Step,
     "string",
     "color",
   ] as const;
+
   if (!s.setting.type || !validTypes.includes(s.setting.type)) {
     throw new Error(
       `[ValidateTaskSetting] Step ${s.id} has invalid setting type`
@@ -157,11 +174,13 @@ export function isValidTaskSetting(step: unknown): asserts step is Extract<Step,
   }
 }
 
-export function isValidTaskTask(step: unknown): asserts step is Extract<Step, { type: STEP_TYPES.TASK }> {
+export function isValidTaskTask(
+  step: unknown
+): asserts step is Extract<Step, { type: STEP_TYPES.TASK }> {
   validateStepBase(step, STEP_TYPES.TASK);
   const s = step as Partial<Extract<Step, { type: STEP_TYPES.TASK }>>;
 
-  if (!s.taskId) {
+  if (!s.taskReference?.id) {
     throw new Error(`[ValidateTaskTask] Step ${s.id} does not have a taskId`);
   }
 }

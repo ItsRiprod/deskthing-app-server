@@ -164,3 +164,9 @@ export const sanitizeSettings: (
     }
     return setting as SettingsType;
 };
+
+  export const settingHasOptions: (setting: SettingsType) => asserts setting is SettingsRanked | SettingsList | SettingsSelect | SettingsMultiSelect = (setting) => {
+      if (!setting) throw new Error('[settingHasOptions] Setting must be defined');
+      if (!setting.type) throw new Error('[settingHasOptions] Setting type must be defined');
+      return setting.type === SETTING_TYPES.RANKED || setting.type === SETTING_TYPES.LIST || setting.type === SETTING_TYPES.SELECT || setting.type === SETTING_TYPES.MULTISELECT;
+  }
