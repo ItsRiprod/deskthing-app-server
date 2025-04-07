@@ -668,7 +668,13 @@ export class DeskThingClass<
    * });
    */
   send(payload: ToClientData & { app?: string; clientId?: string }): void {
-    this.sendData(APP_REQUESTS.SEND, payload);
+
+    const filledPayload: ToClientData & { app?: string; clientId?: string } = {
+      app: this.manifest?.id,
+      ...payload
+    }
+
+    this.sendData(APP_REQUESTS.SEND, filledPayload);
   }
 
   sendSong(songData: SongData) {
