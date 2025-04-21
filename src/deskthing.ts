@@ -2043,7 +2043,8 @@ export class DeskThingClass<
    * @param type - The type of image to return (jpeg for static and gif for animated)
    * @param retries - The number of times to retry the request in case of failure. Defaults to 3.
    * @returns Promise string that has the base64 encoded image
-   *
+   * @depreciated - use images directly in the client with DeskThing.useProxy(imageUrl) and avoid encoding them
+   * 
    * @example
    * // Getting encoded spotify image data
    * const encodedImage = await deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
@@ -2120,6 +2121,7 @@ export class DeskThingClass<
 
   /**
    * Saves an image from a URL to a local directory and tracks the file path
+   * @depreciated - use images directly in the client with DeskThing.useProxy(imageUrl) and avoid encoding them
    *
    * @param url - The direct URL to the image or local file path
    * @returns Promise resolving to the saved image's filename

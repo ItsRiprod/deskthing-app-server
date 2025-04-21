@@ -23,6 +23,7 @@ export class ImageHandler {
 
   /**
    * Save an image from a URL, file path, or data URL
+   * @depreciated - use images directly in the client with DeskThing.useProxy(imageUrl) and avoid encoding them
    */
   async saveImageReference(url: string, appId: string, headers?: Record<string, string>): Promise<string | null> {
     if (!url || typeof url !== "string") {
@@ -228,7 +229,7 @@ export class ImageHandler {
   /**
    * Save image buffer to disk
    */
-  private async saveImageToDisk(buffer: Buffer, extension: string): Promise<string> {
+  private async saveImageToDisk(buffer: Buffer, extension: string, persist?: boolean): Promise<string> {
     // Generate unique filename
     const uniqueId = crypto.randomUUID();
     const fileName = `${uniqueId}.${extension}`;
