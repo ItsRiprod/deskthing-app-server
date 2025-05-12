@@ -1,6 +1,6 @@
 {
   "name": "@deskthing/server",
-  "version": "0.10.17",
+  "version": "0.10.18",
   "description": "The Deskthing connector for the server apps",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,7 +11,7 @@
     "build": "npm run build:types && npm run build:js",
     "build:old": "tsc",
     "build:types": "tsc --emitDeclarationOnly --outDir dist",
-    "build:js": "esbuild src/index.ts --bundle --platform=node --format=cjs --outdir=dist",
+    "build:js": "esbuild src/index.ts --bundle --platform=node --format=esm --outdir=dist",
     "test": "vitest"
   },
   "author": "Riprod",
