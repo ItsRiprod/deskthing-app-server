@@ -9,8 +9,6 @@ import {
   AppDataInterface,
   AppSettings,
   DESKTHING_EVENTS,
-  AuthScopes,
-  LOGGING_LEVELS,
   Action,
   EventMode,
   Task,
@@ -25,13 +23,10 @@ import {
   GenericTransitData,
   TransitData,
   DeskThingToAppCore,
-  AUDIO_REQUESTS,
 } from "@deskthing/types";
 import { sanitizeSettings, settingHasOptions } from "./settings/settingsUtils";
-import { ImageHandler } from "./imageUtils/imageHandler";
 import { parentPort } from "worker_threads";
 import { isValidAppDataInterface } from "./utils/validators";
-import EventEmitter from "node:events";
 
 type Response = {
   data: any;
@@ -42,18 +37,6 @@ type Response = {
 
 // Type definitions for various listeners, events, and data types = used in the class
 type GenericListener = (...args: any) => Promise<void> | void;
-
-type toServer = (data: AppToDeskThingData) => void;
-type SysEvents = (
-  event: string,
-  listener: (...args: any) => void
-) => () => void;
-
-/** @depreciated */
-type startData = {
-  toServer: toServer;
-  SysEvents: SysEvents;
-};
 
 type ImageReference = {
   [key: string]: string;
@@ -79,8 +62,8 @@ type ExtractAppPayload<
   R extends ExtractAppRequest<D, T> | undefined
 > = Extract<AppToDeskThingData, { type: T; request?: R }> extends never
   ? T extends string
-    ? D
-    : Extract<D, { type: T; request?: R }>
+  ? D
+  : Extract<D, { type: T; request?: R }>
   : Extract<AppToDeskThingData, { type: T; request?: R }>;
 
 // DeskThing To App Type Helpers
@@ -120,15 +103,12 @@ export class DeskThingClass<
 > {
   // Singleton
   private static instance: DeskThingClass<any, any>;
-  public static version = "0.11.1";
+  public static version = "0.11.0";
 
   // Context
   private manifest: AppManifest | null = null;
-  private appData: AppDataInterface | null = null;
-  private settings: AppSettings | null = null;
 
   // Communication with the server
-  private SysEvents: SysEvents | null = null;
   public imageUrls: ImageReference = {};
 
   // Listener data
@@ -143,17 +123,8 @@ export class DeskThingClass<
   private backgroundTasks: Array<() => void> = [];
   public stopRequested: boolean = false;
 
-  // stores / classes
-  private imageHandler: ImageHandler;
-
   constructor() {
     this.loadManifest();
-    this.imageHandler = new ImageHandler((level, message) => {
-      if (level === "error") this.sendError(message);
-      else if (level === "warn") this.sendWarning(message);
-      else this.sendLog(message);
-    });
-
     this.initializeListeners();
   }
 
@@ -175,9 +146,6 @@ export class DeskThingClass<
           break;
         case "stop":
           try {
-            if (this.appData) {
-              this.saveAppData();
-            }
             // Notify listeners of the stop event
             await this.notifyListeners(DESKTHING_EVENTS.STOP, {
               type: DESKTHING_EVENTS.STOP
@@ -189,7 +157,6 @@ export class DeskThingClass<
             // Stop all background tasks
             this.backgroundTasks.forEach((cancel) => cancel());
             this.backgroundTasks = [];
-            this.sendLog("Background tasks stopped and removed");
           } catch (error) {
             console.error("Error in stop:", error);
           }
@@ -226,31 +193,6 @@ export class DeskThingClass<
   }
 
   /**
-   * Initializes data if it is not already set on the server.
-   * This method is run internally when there is no data retrieved from the server.
-   *
-   * @since 0.10.4
-   * @example
-   * const deskThing = DeskThing.getInstance();
-   * deskThing.start({ toServer, SysEvents });
-   */
-  private async initializeData() {
-    if (this.appData) {
-      this.sendData(APP_REQUESTS.SET, this.appData);
-    } else {
-      this.appData = { version: this.manifest?.version || DeskThingClass.version };
-      this.sendData(APP_REQUESTS.SET, this.appData, "appdata");
-    }
-
-    if (this.settings) {
-      this.sendData(APP_REQUESTS.SET, this.settings, "settings");
-    } else {
-      this.settings = {};
-      this.sendData(APP_REQUESTS.SET, this.settings, "settings");
-    }
-  }
-
-  /**
    * Notifies all listeners of a particular event.
    *
    * @since 0.8.0
@@ -269,9 +211,9 @@ export class DeskThingClass<
           try {
             await callback(data);
           } catch (error) {
-            this.sendLog(
+            console.log(
               "Encountered an error in notifyListeners" +
-                (error instanceof Error ? error.message : error)
+              (error instanceof Error ? error.message : error)
             );
           }
         })
@@ -331,7 +273,7 @@ export class DeskThingClass<
     event: E,
     callback: DeskThingListener<ToAppData, E, string>
   ): () => void {
-    this.sendLog("Registered a new listener for event: " + event);
+    console.log("Registered a new listener for event: " + event);
     if (!this.Listeners[event]) {
       this.Listeners[event] = [];
     }
@@ -362,35 +304,6 @@ export class DeskThingClass<
     this.Listeners[event] = this.Listeners[event]!.filter(
       (cb) => cb !== callback
     );
-  }
-
-  /**
-   * Registers a system event listener. This feature is somewhat limited but allows for detecting when there are new audiosources or button mappings registered to the server.
-   * Eg 'config' is emitted when the server has new button mappings or audio sources registered.
-   *
-   * @since 0.8.0
-   * @param event - The system event to listen for.
-   * @param listener - The function to call when the event occurs.
-   * @deprecated - Just don't use this lol. It's outdated
-   * @returns A function to remove the listener.
-   *
-   * @example
-   * const removeSysListener = deskThing.onSystem('config', (config) => console.log('Config changed', config));
-   * removeSysListener(); // To remove the system event listener
-   */
-  onSystem(event: string, listener: GenericListener): () => void {
-    if (this.SysEvents) {
-      const removeListener = this.SysEvents(event, listener);
-      this.sysListeners.push(removeListener);
-      return () => {
-        const index = this.sysListeners.indexOf(removeListener);
-        if (index !== -1) {
-          this.sysListeners[index](); // Call the removal function
-          this.sysListeners.splice(index, 1); // Remove it from the array
-        }
-      };
-    }
-    return () => {}; // Return a no-op function if SysEvents is not defined
   }
 
   /**
@@ -447,47 +360,13 @@ export class DeskThingClass<
         }
       );
     } catch (error) {
-      this.sendWarning("Failed to listen for event: " + event);
+      console.warn("Failed to listen for event: " + event);
       throw new Error(
-        `Error in once() for app ${this.manifest?.id || "unset"}: ${
-          error instanceof Error ? error.message : String(error)
+        `Error in once() for app ${this.manifest?.id || "unset"}: ${error instanceof Error ? error.message : String(error)
         }`
       );
     }
   }
-
-  /**
-   * Fetches data from the server with a specified event type.
-   *
-   * @since 0.10.0
-   * @param type - The event type to fetch.
-   * @param requestData - The data to send.
-   * @param request
-   * @deprecated
-   * @returns
-   */
-  public fetchData = async <T>(
-    type: DESKTHING_EVENTS | SongEvent | string,
-    requestData: AppToDeskThingData,
-    request?: string
-  ): Promise<T | undefined> => {
-    const timeout = new Promise<undefined>((_, reject) => {
-      setTimeout(() => reject(new Error("FetchData request timed out")), 5000);
-    });
-
-    const dataPromise = new Promise<T>((resolve) => {
-      this.once(
-        type,
-        (data) => {
-          resolve(data as T);
-        },
-        request
-      );
-      this.sendData(requestData.type, requestData.payload, requestData.request);
-    });
-
-    return Promise.race([dataPromise, timeout]).catch(() => undefined);
-  };
 
   /**
    * Either just sends data, sends and listens for data, or sends - listens - and provides a callback hook
@@ -507,10 +386,10 @@ export class DeskThingClass<
     callback?: (
       data: ExtractDeskThingPayload<ToAppData, T, R> | undefined
     ) => void,
-    timeoutMs: number = 5000 
+    timeoutMs: number = 5000
   ): Promise<ExtractDeskThingPayload<ToAppData, T, R> | undefined> => {
     if (!requestData.type) {
-      this.sendWarning(`[fetch]: Request Data doesn't have a "type" field`);
+      console.warn(`[fetch]: Request Data doesn't have a "type" field`);
       return undefined;
     }
 
@@ -528,17 +407,17 @@ export class DeskThingClass<
           const handleResolve = (data?: ExtractDeskThingPayload<ToAppData, T, R>) => {
             if (isResolved) return;
             isResolved = true;
-            
+
             if (timeoutId) {
               clearTimeout(timeoutId);
               timeoutId = null;
             }
-            
+
             resolve(data);
           };
 
           timeoutId = setTimeout(() => {
-            this.sendDebug(`[fetch]: Request timed out after ${timeoutMs}ms for type: ${listenData.type}`);
+            console.debug(`[fetch]: Request timed out after ${timeoutMs}ms for type: ${listenData.type}`);
 
             handleResolve(undefined);
             // add variability to not stack requests 
@@ -550,16 +429,16 @@ export class DeskThingClass<
               (data) => handleResolve(data as ExtractDeskThingPayload<ToAppData, T, R>),
               listenData.request
             ).catch((error) => {
-              this.sendWarning(`[fetch]: Error during fetch listener! ${error}`);
+              console.warn(`[fetch]: Error during fetch listener! ${error}`);
               handleResolve(undefined);
             });
           } catch (error) {
-            this.sendWarning(`[fetch]: Error during fetch listener setup! ${error}`);
+            console.warn(`[fetch]: Error during fetch listener setup! ${error}`);
             handleResolve(undefined);
           }
         }
       );
-      
+
       // run the callback
       const response = await dataPromise;
 
@@ -569,9 +448,8 @@ export class DeskThingClass<
         try {
           await callback(response as ExtractDeskThingPayload<ToAppData, T, R>);
         } catch (error) {
-          this.sendWarning(
-            `[fetch]: Error during fetch callback! ${
-              error instanceof Error ? error.message : error
+          console.warn(
+            `[fetch]: Error during fetch callback! ${error instanceof Error ? error.message : error
             }`
           );
         }
@@ -579,18 +457,16 @@ export class DeskThingClass<
 
       return response;
     } catch (error) {
-      this.sendWarning(
-        `[fetch]: Error during deskthing fetch! ${
-          error instanceof Error ? error.message : error
+      console.warn(
+        `[fetch]: Error during deskthing fetch! ${error instanceof Error ? error.message : error
         }`
       );
       if (callback) {
         try {
           await callback(undefined);
         } catch (error) {
-          this.sendWarning(
-            `[fetch]: Error during errored callback! ${
-              error instanceof Error ? error.message : error
+          console.warn(
+            `[fetch]: Error during errored callback! ${error instanceof Error ? error.message : error
             }`
           );
         }
@@ -608,9 +484,9 @@ export class DeskThingClass<
    * @param request - Optional request string.
    *
    * @example
-   * deskThing.sendData('log', { message: 'Logging an event' });
+   * deskThing.sendSocketData('log', { message: 'Logging an event' });
    */
-  private sendData<
+  private sendSocketData<
     T extends ExtractAppType<ToAppData>,
     R extends ExtractAppRequest<ToAppData, T>
   >(
@@ -618,15 +494,6 @@ export class DeskThingClass<
     payload: ExtractAppPayload<ToAppData, T, R>["payload"],
     request?: R
   ): void {
-    if (this.sendToServer == null) {
-      console.error(
-        "\x1b[2m%s\x1b[0m",
-        "toServer is not defined. Unable to send",
-        { event, payload, request }
-      ); // cant use deskthing erroring because toServer does not exist
-      return;
-    }
-
     const appData = {
       type: event,
       request: request,
@@ -635,6 +502,7 @@ export class DeskThingClass<
 
     this.sendToServer(appData);
   }
+
   /**
    * Sends data to the client for the client to listen to
    *
@@ -674,90 +542,11 @@ export class DeskThingClass<
       ...payload
     }
 
-    this.sendData(APP_REQUESTS.SEND, filledPayload);
+    this.sendSocketData(APP_REQUESTS.SEND, filledPayload);
   }
 
   sendSong(songData: SongData) {
-    this.sendData(APP_REQUESTS.SONG, songData);
-  }
-
-  /**
-   *
-   */
-  log = async (logType: LOGGING_LEVELS, message: string): Promise<void> => {
-    this.sendData(APP_REQUESTS.LOG, message, logType);
-  };
-
-  /**
-   * Sends a plain text message to the server. This will display as a gray notification on the DeskThingServer GUI
-   *
-   * @since 0.8.0
-   * @param message - The message to send to the server.
-   * @deprecated - Use {@link DeskThing.sendLog} or {@link DeskThing.sendWarning} instead
-   * @example
-   * deskThing.sendMessage('Hello, Server!');
-   */
-  sendMessage(message: string): void {
-    this.log(LOGGING_LEVELS.MESSAGE, message);
-  }
-
-  /**
-   * Sends a log message to the server. This will be saved to the .logs file and be saved in the Logs on the DeskThingServer GUI
-   *
-   * @param log - The log message to send.
-   * @since 0.8.0
-   * @example
-   * deskThing.sendLog('[spotify] Fetching data...');
-   */
-  sendLog(log: string): void {
-    this.log(LOGGING_LEVELS.LOG, log);
-  }
-  /**
-   * Sends a warning to the server. This will be saved to the .logs file and be saved in the Logs on the DeskThingServer GUI
-   *
-   * @param warning - The warning message to send.
-   * @since 0.9.3
-   * @example
-   * deskThing.sendWarning('[spotify] Ensure the API keys are set!');
-   */
-  sendWarning(warning: string): void {
-    this.log(LOGGING_LEVELS.WARN, warning);
-  }
-
-  /**
-   * Sends an error message to the server. This will show up as a red notification
-   *
-   * @param message - The error message to send.
-   * @since 0.8.0
-   * @example
-   * deskThing.sendError('An error occurred!');
-   */
-  sendError(message: string): void {
-    this.log(LOGGING_LEVELS.ERROR, message);
-  }
-
-  /**
-   * Sends a fatal error message to the server. This will show up as a critical red notification
-   *
-   * @param message - The fatal error message to send.
-   * @since 0.9.3
-   * @example
-   * deskThing.sendFatal('Critical system failure!');
-   */
-  sendFatal(message: string): void {
-    this.log(LOGGING_LEVELS.FATAL, message);
-  }
-
-  /**
-   * Sends a debug message to the server. This will be saved to the .logs file and only visible in debug mode
-   *
-   * @param message - The debug message to send.
-   * @since 0.9.3
-   * @example
-   * deskThing.sendDebug('[spotify] Debug info: ' + debugData);
-   */
-  sendDebug(message: string): void {
-    this.log(LOGGING_LEVELS.DEBUG, message);
+    this.sendSocketData(APP_REQUESTS.SONG, songData);
   }
 
   /**
@@ -766,43 +555,14 @@ export class DeskThingClass<
    *
    * @param appId - The ID of the target app.
    * @param data - The data to send to the target app.
-   * @since 0.8.0
+   * @since 0.11.0
    * @example
-   * deskThing.sendDataToOtherApp('utility', { type: 'set', request: 'next', payload: { id: '' } });
+   * deskThing.sendToApp('utility', { type: 'set', request: 'next', payload: { id: '' } });
    * @example
-   * deskThing.sendDataToOtherApp('spotify', { type: 'get', request: 'music' });
+   * deskThing.sendToApp('spotify', { type: 'get', request: 'music' });
    */
-  sendDataToOtherApp(appId: string, payload: AppToDeskThingData): void {
-    this.sendData(APP_REQUESTS.TOAPP, payload, appId);
-  }
-
-  /**
-   * Sends structured data to the client through the server. This will be received by the webapp client. The "app" field defaults to the current app.
-   *
-   * @param data - The structured data to send to the client, including app, type, request, and data.
-   *
-   * @deprecated - Use {@link DeskThing.send} instead!
-   *
-   * @example
-   * deskThing.send({
-   *   app: 'client',
-   *   type: 'set',
-   *   request: 'next',
-   *   payload: { key: 'value' }
-   * });
-   * @example
-   * deskThing.send({
-   *   type: 'songData',
-   *   payload: songData
-   * });
-   * @example
-   * deskThing.send({
-   *   type: 'callStatus',
-   *   payload: callData
-   * });
-   */
-  sendDataToClient(data: ToClientData & { app?: string }): void {
-    this.send(data);
+  sendToApp(appId: string, payload: AppToDeskThingData): void {
+    this.sendSocketData(APP_REQUESTS.TOAPP, payload, appId);
   }
 
   /**
@@ -814,7 +574,7 @@ export class DeskThingClass<
    * deskThing.openUrl('https://example.com');
    */
   openUrl(url: string): void {
-    this.sendData(APP_REQUESTS.OPEN, url);
+    this.sendSocketData(APP_REQUESTS.OPEN, url);
   }
 
   /**
@@ -828,22 +588,18 @@ export class DeskThingClass<
    * console.log('Fetched data:', data);
    */
   async getData(): Promise<SavedData | null> {
-    if (!this.appData?.data) {
-      const data = await this.fetch(
-        {
-          type: APP_REQUESTS.GET,
-          request: "data",
-        },
-        { type: DESKTHING_EVENTS.DATA }
-      );
-      if (!data) {
-        this.sendError("[getData]: Data not available");
-        return null;
-      }
-      return data.payload;
-    } else {
-      return this.appData.data;
+    const data = await this.fetch(
+      {
+        type: APP_REQUESTS.GET,
+        request: "data",
+      },
+      { type: DESKTHING_EVENTS.DATA }
+    );
+    if (!data) {
+      console.error("[getData]: Data not available");
+      return null;
     }
+    return data.payload;
   }
 
   /**
@@ -857,53 +613,20 @@ export class DeskThingClass<
    * console.log('Fetched data:', data);
    */
   async getAppData(): Promise<AppDataInterface | null> {
-    if (!this.appData) {
-      const data = await this.fetch(
-        {
-          type: APP_REQUESTS.GET,
-          request: "appData",
-        },
-        {
-          type: DESKTHING_EVENTS.APPDATA
-        }
-      );
-      if (!data) {
-        this.sendError("[getAppData]: Data not available");
-        return null;
+    const data = await this.fetch(
+      {
+        type: APP_REQUESTS.GET,
+        request: "appData",
+      },
+      {
+        type: DESKTHING_EVENTS.APPDATA
       }
-      return data.payload;
-    } else {
-      return this.appData;
+    );
+    if (!data) {
+      console.error("[getAppData]: Data not available");
+      return null;
     }
-  }
-
-  /**
-   * Requests a specific configuration from the server by name.
-   *
-   * @param name - The name of the configuration to request.
-   * @returns A promise that resolves with the requested configuration or null if not found.
-   *
-   * @deprecated Does not work anymore. Use settings instead
-   * @example
-   * deskThing.getConfig('myConfig');
-   * @example
-   * const someValue = await deskThing.getConfig('superSpecificConfig');
-   * console.log('Some value:', someValue);
-   */
-  async getConfig(name: string) {
-    // Request config data from the server
-    this.sendData(APP_REQUESTS.GET, undefined, "config");
-
-    // Race between the data being received and a timeout
-    return await Promise.race([
-      this.once(DESKTHING_EVENTS.CONFIG),
-      new Promise((resolve) =>
-        setTimeout(() => {
-          resolve(null);
-          this.sendLog(`Failed to fetch config: ${name}`);
-        }, 5000)
-      ),
-    ]);
+    return data.payload;
   }
 
   /**
@@ -916,67 +639,21 @@ export class DeskThingClass<
    * console.log('Current settings:', settings);
    */
   async getSettings(): Promise<AppSettings | null> {
-    if (!this.settings) {
-      const socketData = await this.fetch(
-        {
-          type: APP_REQUESTS.GET,
-          request: "settings",
-        },
-        {
-          type: DESKTHING_EVENTS.SETTINGS,
-        }
-      );
-      if (socketData?.payload) {
-        this.settings = socketData.payload;
-        return socketData.payload;
-      } else {
-        this.sendLog("Settings are not defined!");
-        return null;
+    const socketData = await this.fetch(
+      {
+        type: APP_REQUESTS.GET,
+        request: "settings",
+      },
+      {
+        type: DESKTHING_EVENTS.SETTINGS,
       }
-    } else {
-      return this.settings;
-    }
-  }
-
-  /**
-   * Requests user input for the specified scopes and triggers the provided callback with the input response.
-   * Commonly used for settings keys, secrets, and other user-specific data. Callback data will be a json object with keys matching the scope ids and values of the answers.
-   *
-   * @param scopes - The scopes to request input for, defining the type and details of the input needed.
-   * @param callback - The function to call with the input response once received.
-   * @deprecated This will be removed in future release and replaced with tasks.
-   * @example
-   * deskThing.getUserInput(
-   *   {
-   *     username: { instructions: 'Enter your username', label: 'Username' },
-   *     password: { instructions: 'Enter your password', label: 'Password' },
-   *     status: { instructions: 'Enter status', label: 'Status', value: 'active' }
-   *   },
-   *   (response) => console.log('User input received:', response.username, response.password, response.status)
-   * );
-   */
-  async getUserInput(
-    scopes: AuthScopes,
-    callback: DeskThingListener<ToAppData, DESKTHING_EVENTS.INPUT, string>
-  ): Promise<void> {
-    if (!scopes) {
-      this.sendError("Scopes not defined in getUserInput!");
-      return;
+    );
+    if (!socketData?.payload) {
+      console.error("[getSettings]: Settings are not defined!");
+      return null;
     }
 
-    // Send the request to the server
-    this.sendData(APP_REQUESTS.GET, scopes, "input");
-
-    try {
-      // Wait for the 'input' event and pass the response to the callback
-      const response = await this.once(DESKTHING_EVENTS.INPUT);
-
-      if (callback && typeof callback === "function") {
-        callback(response);
-      }
-    } catch (error) {
-      this.sendError(`Error occurred while waiting for input: ${error}`);
-    }
+    return socketData.payload;
   }
 
   /**
@@ -988,7 +665,7 @@ export class DeskThingClass<
    *
    * @example
    * // Adding a boolean setting
-   * deskThing.addSettings({
+   * deskThing.setSettings({
    *   darkMode: {
    *     type: 'boolean',
    *     label: 'Dark Mode',
@@ -998,7 +675,7 @@ export class DeskThingClass<
    * })
    * @example
    * // Adding a select setting
-   * deskThing.addSettings({
+   * deskThing.setSettings({
    *   theme: {
    *     type: 'select',
    *     label: 'Theme',
@@ -1013,7 +690,7 @@ export class DeskThingClass<
    * })
    * @example
    * // Adding a multiselect setting
-   * deskThing.addSettings({
+   * deskThing.setSettings({
    *   notifications: {
    *     type: 'multiselect',
    *     label: 'Notifications',
@@ -1028,7 +705,7 @@ export class DeskThingClass<
    * })
    * @example
    * // Adding a number setting
-   * deskThing.addSettings({
+   * deskThing.setSettings({
    *   fontSize: {
    *     type: 'number',
    *     label: 'Font Size',
@@ -1040,7 +717,7 @@ export class DeskThingClass<
    * })
    * @example
    * // Adding a string setting
-   * deskThing.addSettings({
+   * deskThing.setSettings({
    *   username: {
    *     type: 'string',
    *     label: 'Username',
@@ -1050,7 +727,7 @@ export class DeskThingClass<
    * })
    * @example
    * // Adding a range setting
-   * deskThing.addSettings({
+   * deskThing.setSettings({
    *   volume: {
    *     type: 'range',
    *     label: 'Volume',
@@ -1063,7 +740,7 @@ export class DeskThingClass<
    * })
    * @example
    * // Adding an order setting
-   * deskThing.addSettings({
+   * deskThing.setSettings({
    *   displayOrder: {
    *     type: 'order',
    *     label: 'Display Order',
@@ -1078,7 +755,7 @@ export class DeskThingClass<
    * })
    * @example
    * // Adding a list setting
-   * deskThing.addSettings({
+   * deskThing.setSettings({
    *   settingsList: {
    *      label: "Settings List",
    *      description: "Select multiple items from the list",
@@ -1094,7 +771,7 @@ export class DeskThingClass<
    * })
    * @example
    * // Adding a color setting
-   * deskThing.addSettings({
+   * deskThing.setSettings({
    *   settingsColor: {
    *      label: "Settings Color",
    *      description: "Prompt the user to select a color",
@@ -1103,78 +780,73 @@ export class DeskThingClass<
    *    }
    * })
    */
-  addSettings(settings: AppSettings, notifyServer = true): void {
-    this.sendLog("Adding settings..." + Object.keys(settings).toString());
-    this.sendDebug("Settings: " + settings.toString());
-    if (!this.settings) {
-      this.settings = {};
-    }
+  setSettings = async (settings: AppSettings): Promise<void> => {
+    console.log("Adding settings..." + Object.keys(settings).toString());
+
+    const existingSettings = await this.getSettings()
 
     if (!settings || typeof settings !== "object") {
       throw new Error("Settings must be a valid object");
     }
 
-    if (this.settings) {
+    if (existingSettings) {
       Object.keys(settings).forEach((id) => {
         const setting = settings[id];
 
-        if (!this.settings) return;
+        if (!existingSettings) return;
         if (!setting.type || !setting.label) {
           throw new Error(`Setting ${id} must have a type and label`);
         }
 
-        if (this.settings[id]) {
-          this.sendWarning(
+        if (existingSettings[id]) {
+          console.warn(
             `Setting with label "${setting.label}" already exists. It will be overwritten.`
           );
         }
         try {
-          this.settings[id] = { ...sanitizeSettings(setting), id };
+          existingSettings[id] = { ...sanitizeSettings(setting), id };
         } catch (error) {
           if (error instanceof Error) {
-            this.sendError(
+            console.error(
               `Error sanitizing setting with label "${setting.label}": ${error.message}`
             );
           } else {
-            this.sendError(
+            console.error(
               `Error sanitizing setting with label "${setting.label}": ${error}`
             );
-            // ik its bad but oh well
-            console.error(error);
           }
         }
       });
 
-      this.notifyListeners(DESKTHING_EVENTS.SETTINGS, {
-        type: DESKTHING_EVENTS.SETTINGS,
-        payload: this.settings,
-      });
-      notifyServer &&
-        this.sendData(APP_REQUESTS.SET, this.settings, "settings");
+      this.saveSettings(existingSettings)
     }
   }
 
   /**
    * Updates the options for a specific setting
    */
-  setSettingOptions(settingId: string, options: SettingOption[]): void {
-    if (!this.settings?.[settingId]) {
-      this.sendError(`Setting with id ${settingId} not found`);
+  setSettingOptions = async (settingId: string, options: SettingOption[]): Promise<void> => {
+
+    const existingSettings = await this.getSettings()
+
+
+    if (!existingSettings?.[settingId]) {
+      console.error(`Setting with id ${settingId} not found`);
       return;
     }
 
     try {
-      settingHasOptions(this.settings[settingId]);
+      settingHasOptions(existingSettings[settingId]);
     } catch (error) {
       if (error instanceof Error) {
-        this.sendError(error.message);
+        console.error(error.message);
       }
       return;
     }
 
-    this.settings[settingId].options = options;
+    existingSettings[settingId].options = options;
 
-    this.sendData(APP_REQUESTS.SET, this.settings, "settings");
+    this.saveSettings(existingSettings);
   }
 
   /**
@@ -1184,16 +856,16 @@ export class DeskThingClass<
    * @param settings The settings object
    */
   async initSettings(settings: AppSettings): Promise<void> {
-    if (!this.settings) {
-      await this.getSettings(); // ensures an attempt is made to get settings from the server
-    }
+
+    const existingSettings = await this.getSettings()
+
     const newSettings = Object.fromEntries(
       Object.entries(settings).filter(
-        ([key]) => !this.settings || !(key in this.settings)
+        ([key]) => !existingSettings || !(key in existingSettings)
       )
     ) satisfies AppSettings;
 
-    this.addSettings(newSettings); // only add the new settings
+    this.setSettings(newSettings); // only add the new settings
   }
 
   /**
@@ -1204,21 +876,7 @@ export class DeskThingClass<
    * server.deleteSetting('color');
    */
   async deleteSettings(settingIds: string | string[]) {
-    const deleteSettings = Array.isArray(settingIds)
-      ? settingIds
-      : [settingIds];
-    deleteSettings.forEach((settingId) => {
-      if (this.settings) {
-        delete this.settings[settingId];
-      }
-    });
-
-    this.settings &&
-      this.notifyListeners(DESKTHING_EVENTS.SETTINGS, {
-        type: DESKTHING_EVENTS.SETTINGS,
-        payload: this.settings,
-      });
-    this.sendData(APP_REQUESTS.DELETE, settingIds, "settings");
+    this.sendSocketData(APP_REQUESTS.DELETE, settingIds, "settings");
   }
 
   /**
@@ -1230,19 +888,7 @@ export class DeskThingClass<
    *
    */
   async deleteData(dataIds: string | string[]) {
-    const deleteSettings = Array.isArray(dataIds) ? dataIds : [dataIds];
-    deleteSettings.forEach((dataIds) => {
-      if (this.appData?.data) {
-        delete this.appData.data[dataIds];
-      }
-    });
-
-    this.appData?.data &&
-      this.notifyListeners(DESKTHING_EVENTS.DATA, {
-        type: DESKTHING_EVENTS.DATA,
-        payload: this.appData.data,
-      });
-    this.sendData(APP_REQUESTS.DELETE, dataIds, "data");
+    this.sendSocketData(APP_REQUESTS.DELETE, dataIds, "data");
   }
 
   /**
@@ -1288,7 +934,7 @@ export class DeskThingClass<
     if (!action.id || typeof action.id !== "string") {
       throw new Error("Action must have a valid id");
     }
-    this.sendData(APP_REQUESTS.ACTION, action, "add");
+    this.sendSocketData(APP_REQUESTS.ACTION, action, "add");
   }
   /**
    * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
@@ -1327,8 +973,8 @@ export class DeskThingClass<
    * deskthing.updateFlair('like', 'active')
    * // Now using likeactive.svg
    */
-  updateIcon(id: string, icon: string): void {
-    this.sendData(APP_REQUESTS.ACTION, { id, icon }, "update");
+  updateIcon(actionId: string, newIcon: string): void {
+    this.sendSocketData(APP_REQUESTS.ACTION, { id: actionId, icon: newIcon }, "update");
   }
 
   /**
@@ -1377,7 +1023,7 @@ export class DeskThingClass<
       enabled: true,
     };
 
-    this.sendData(APP_REQUESTS.KEY, key, "add");
+    this.sendSocketData(APP_REQUESTS.KEY, key, "add");
   }
 
   /**
@@ -1386,7 +1032,7 @@ export class DeskThingClass<
    * @param id - The unique identifier of the action to be removed.
    */
   removeAction(id: string): void {
-    this.sendData(APP_REQUESTS.ACTION, { id }, "remove");
+    this.sendSocketData(APP_REQUESTS.ACTION, { id }, "remove");
   }
 
   /**
@@ -1395,11 +1041,12 @@ export class DeskThingClass<
    * @param id - The unique identifier of the key to be removed.
    */
   removeKey(id: string): void {
-    this.sendData(APP_REQUESTS.KEY, { id }, "remove");
+    this.sendSocketData(APP_REQUESTS.KEY, { id }, "remove");
   }
   public tasks = {
     /**
      * Adds a new task.
+     * @throws {Error} - when the data is invalid.
      * @param taskData - The data for the new task.
      * @example
      * deskthing.tasks.add({
@@ -1429,16 +1076,17 @@ export class DeskThingClass<
           source: this.manifest?.id || "unknown",
         };
         isValidTask(newTask);
-        this.sendData(APP_REQUESTS.TASK, { task: newTask }, "add");
+        this.sendSocketData(APP_REQUESTS.TASK, { task: newTask }, "add");
       } catch (error) {
         if (error instanceof Error) {
-          this.sendWarning("Invalid task data:" + error.message);
+          console.warn("Invalid task data:" + error.message);
         }
         throw error;
       }
     },
     /**
      * Initializes the tasks
+     * @throws {Error} - when the data is invalid.
      */
     initTasks: async (
       taskData: Record<string, Omit<Task, "source">>
@@ -1454,9 +1102,9 @@ export class DeskThingClass<
               isValidTask(newTask);
               return { ...validatedTasks, [newTask.id]: newTask };
             } catch (error) {
-              this.sendWarning(
+              console.warn(
                 `Task ${task.label || task.id} failed to be verified: ` +
-                  (error instanceof Error && error.message)
+                (error instanceof Error && error.message)
               );
               return validatedTasks;
             }
@@ -1464,9 +1112,9 @@ export class DeskThingClass<
           {}
         );
 
-        this.sendData(APP_REQUESTS.TASK, { tasks: newTasks }, "init");
+        this.sendSocketData(APP_REQUESTS.TASK, { tasks: newTasks }, "init");
       } catch (error) {
-        this.sendWarning(
+        console.warn(
           "Invalid task data:" + (error instanceof Error && error.message)
         );
       }
@@ -1501,7 +1149,7 @@ export class DeskThingClass<
           validStepFields.includes(key as keyof Task)
         )
       );
-      this.sendData(
+      this.sendSocketData(
         APP_REQUESTS.TASK,
         { taskId, task: { ...sanitizedUpdates, id: taskId } },
         "update"
@@ -1514,7 +1162,7 @@ export class DeskThingClass<
      * deskthing.tasks.delete('task-id');
      */
     delete: (taskId: string) => {
-      this.sendData(APP_REQUESTS.TASK, { taskId }, "delete");
+      this.sendSocketData(APP_REQUESTS.TASK, { taskId }, "delete");
     },
 
     /**
@@ -1524,7 +1172,7 @@ export class DeskThingClass<
      * deskthing.tasks.complete('task-id');
      */
     complete: (taskId: string) => {
-      this.sendData(APP_REQUESTS.TASK, { taskId }, "complete");
+      this.sendSocketData(APP_REQUESTS.TASK, { taskId }, "complete");
     },
 
     /**
@@ -1534,7 +1182,7 @@ export class DeskThingClass<
      * deskthing.tasks.restart('task-id');
      */
     restart: (taskId: string) => {
-      this.sendData(APP_REQUESTS.TASK, { taskId }, "restart");
+      this.sendSocketData(APP_REQUESTS.TASK, { taskId }, "restart");
     },
 
     /**
@@ -1544,7 +1192,7 @@ export class DeskThingClass<
      * deskthing.tasks.start('task-id');
      */
     start: (taskId: string) => {
-      this.sendData(APP_REQUESTS.TASK, { taskId }, "start");
+      this.sendSocketData(APP_REQUESTS.TASK, { taskId }, "start");
     },
 
     /**
@@ -1554,7 +1202,7 @@ export class DeskThingClass<
      * deskthing.tasks.end('task-id');
      */
     end: (taskId: string) => {
-      this.sendData(APP_REQUESTS.TASK, { taskId }, "end");
+      this.sendSocketData(APP_REQUESTS.TASK, { taskId }, "end");
     },
 
     /**
@@ -1568,7 +1216,7 @@ export class DeskThingClass<
      * deskthing.on()
      */
     get: () => {
-      this.sendData(APP_REQUESTS.TASK, {}, "get");
+      this.sendSocketData(APP_REQUESTS.TASK, {}, "get");
     },
   };
 
@@ -1654,10 +1302,10 @@ export class DeskThingClass<
     add: (taskId: string, stepData: Step) => {
       try {
         isValidStep(stepData);
-        this.sendData(APP_REQUESTS.STEP, { taskId, step: stepData }, "add");
+        this.sendSocketData(APP_REQUESTS.STEP, { taskId, step: stepData }, "add");
       } catch (error) {
         if (error instanceof Error) {
-          this.sendWarning("Invalid step data:" + error.message);
+          console.warn("Invalid step data:" + error.message);
         }
       }
     },
@@ -1691,7 +1339,7 @@ export class DeskThingClass<
       const sanitizedUpdates = Object.fromEntries(
         Object.entries(updates).filter(([key]) => validStepFields.includes(key))
       ) as Step;
-      this.sendData(
+      this.sendSocketData(
         APP_REQUESTS.STEP,
         { taskId, stepId, step: { ...sanitizedUpdates, id: stepId } },
         "update"
@@ -1705,7 +1353,7 @@ export class DeskThingClass<
      * @param stepId - The ID of the step to delete
      */
     delete: (taskId: string, stepId: string) => {
-      this.sendData(APP_REQUESTS.STEP, { taskId, stepId }, "delete");
+      this.sendSocketData(APP_REQUESTS.STEP, { taskId, stepId }, "delete");
     },
 
     /**
@@ -1715,7 +1363,7 @@ export class DeskThingClass<
      * @param stepId - The ID of the step to complete
      */
     complete: (taskId: string, stepId: string) => {
-      this.sendData(APP_REQUESTS.STEP, { taskId, stepId }, "complete");
+      this.sendSocketData(APP_REQUESTS.STEP, { taskId, stepId }, "complete");
     },
 
     /**
@@ -1725,7 +1373,7 @@ export class DeskThingClass<
      * @param stepId - The ID of the step to restart
      */
     restart: (taskId: string, stepId: string) => {
-      this.sendData(APP_REQUESTS.STEP, { taskId, stepId }, "restart");
+      this.sendSocketData(APP_REQUESTS.STEP, { taskId, stepId }, "restart");
     },
 
     /**
@@ -1735,7 +1383,7 @@ export class DeskThingClass<
      * @param stepId - The ID of the step to retrieve
      */
     get: (taskId: string, stepId: string) => {
-      this.sendData(APP_REQUESTS.STEP, { taskId, stepId }, "get");
+      this.sendSocketData(APP_REQUESTS.STEP, { taskId, stepId }, "get");
     },
   };
   /**
@@ -1743,31 +1391,17 @@ export class DeskThingClass<
    * Sends the updated data to the server and notifies listeners.
    *
    * @param data - The data to be saved and merged with existing data.
+   * @param sync - Whether to sync the data with the server.
    */
-  saveAppData(data?: AppDataInterface, sync = true): void {
-    if (data) {
-      this.appData = {
-        ...this.appData,
-        ...data,
-      };
-    }
-
-    if (data?.settings) {
-      this.sendError(
-        "[saveAppData] ERROR saveAppData() no longer saves settings! use saveSettings() instead!"
-      );
-    }
-
-    this.appData && (this.appData.version = this.appData?.version || DeskThingClass.version)
+  saveAppData(data: AppDataInterface, sync = true): void {
 
     sync &&
-      this.appData &&
-      this.sendData(APP_REQUESTS.SET, this.appData, "appData");
-    this.appData &&
-      this.notifyListeners(DESKTHING_EVENTS.APPDATA, {
-        type: DESKTHING_EVENTS.APPDATA,
-        payload: this.appData,
-      });
+      this.sendSocketData(APP_REQUESTS.SET, data, "appData");
+
+    this.notifyListeners(DESKTHING_EVENTS.APPDATA, {
+      type: DESKTHING_EVENTS.APPDATA,
+      payload: data,
+    });
   }
 
   /**
@@ -1777,44 +1411,25 @@ export class DeskThingClass<
    * @param data - The data to be saved and merged with existing data.
    */
   saveData(data: SavedData, sync = true): void {
-    if (data && this.appData) {
-      this.appData.data = {
-        ...this.appData.data,
-        ...data,
-      };
-    } else {
-      this.appData = {
-        version: this.manifest?.version || DeskThingClass.version,
-        data: data || {},
-      };
-    }
 
-    this.appData.data &&
-      this.notifyListeners(DESKTHING_EVENTS.DATA, {
-        type: DESKTHING_EVENTS.DATA,
-        payload: this.appData.data,
-      });
+    this.notifyListeners(DESKTHING_EVENTS.DATA, {
+      type: DESKTHING_EVENTS.DATA,
+      payload: data,
+    });
     sync &&
-      this.appData.data &&
-      this.sendData(APP_REQUESTS.SET, this.appData.data, "data");
+      this.sendSocketData(APP_REQUESTS.SET, data, "data");
   }
 
   /**
-   * Typically redundant - it ensures the settings are saved to the server
-   * Triggers DeskThing.on('settings', () => void)
-   *
-   * @param data - The data to be saved and merged with existing data.
+   * Saves settings to server - overwriting existing settings and notifies listeners
    */
-  saveSettings(settings?: AppSettings, sync = true): void {
-    if (settings) {
-      this.addSettings(settings, sync);
-    } else {
-      this.appData?.settings &&
-        this.notifyListeners(DESKTHING_EVENTS.SETTINGS, {
-          type: DESKTHING_EVENTS.SETTINGS,
-          payload: this.appData.settings,
-        });
-    }
+  saveSettings(settings: AppSettings): void {
+    this.notifyListeners(DESKTHING_EVENTS.SETTINGS, {
+      type: DESKTHING_EVENTS.SETTINGS,
+      payload: settings,
+    })
+
+    this.sendSocketData(APP_REQUESTS.SET, settings, "settings");
   }
 
   /**
@@ -2006,15 +1621,15 @@ export class DeskThingClass<
 
     // Handle worker errors
     worker.on("error", (error) => {
-      this.sendError(`Worker error: ${error.message}`);
+      console.error(`Worker error: ${error.message}`);
     });
 
     // Handle worker exit
     worker.on("exit", (code) => {
       if (code !== 0) {
-        this.sendWarning(`Worker stopped with exit code ${code}`);
+        console.error(`Worker stopped with exit code ${code}`);
       }
-      this.sendLog(`Worker terminated`);
+      console.log(`Worker terminated`);
     });
 
     const terminate = () => {
@@ -2023,9 +1638,9 @@ export class DeskThingClass<
         worker.terminate();
       } catch (error) {
         if (error instanceof Error) {
-          this.sendError(`Failed to terminate worker: ${error.message}`);
+          console.error(`Failed to terminate worker: ${error.message}`);
         } else {
-          this.sendError(`Failed to terminate worker: ${error}`);
+          console.error(`Failed to terminate worker: ${error}`);
           console.error("[addThread - app]: Unknown error: ", error);
         }
       }
@@ -2035,111 +1650,7 @@ export class DeskThingClass<
     return [worker, terminate];
   }
 
-  /**
-   * Encodes an image from a URL and returns a Promise that resolves to a base64 encoded string.
-   *
-   *
-   * @param url - The url that points directly to the image
-   * @param type - The type of image to return (jpeg for static and gif for animated)
-   * @param retries - The number of times to retry the request in case of failure. Defaults to 3.
-   * @returns Promise string that has the base64 encoded image
-   * @depreciated - use images directly in the client with DeskThing.useProxy(imageUrl) and avoid encoding them
-   * 
-   * @example
-   * // Getting encoded spotify image data
-   * const encodedImage = await deskThing.encodeImageFromUrl(https://i.scdn.co/image/ab67616d0000b273bd7401ecb7477f3f6cdda060, 'jpeg')
-   *
-   * deskThing.send({app: 'client', type: 'song', payload: { thumbnail: encodedImage } })
-   */
-  async encodeImageFromUrl(
-    url: string,
-    type: "jpeg" | "gif" = "jpeg",
-    headers?: SavedData,
-    retries = 0
-  ): Promise<string> {
-    if (!url || typeof url !== "string") {
-      throw new Error("Invalid URL provided");
-    }
 
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout
-
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          "User-Agent": "Mozilla/5.0",
-          ...headers,
-        },
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(
-          `HTTP error! status: ${response.status} - ${response.statusText}`
-        );
-      }
-
-      const contentType = response.headers.get("content-type");
-      if (!contentType?.includes("image")) {
-        throw new Error(
-          `Invalid content type: ${contentType}. Expected image/*`
-        );
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-      if (!arrayBuffer || arrayBuffer.byteLength === 0) {
-        throw new Error("Received empty image data");
-      }
-
-      const bufferData = Buffer.from(arrayBuffer);
-      const imgData = `data:image/${type};base64,${bufferData.toString(
-        "base64"
-      )}`;
-      return imgData;
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      this.sendError(`Error fetching ${type} from ${url}: ${errorMessage}`);
-      console.error(`Error fetching ${type}:`, error);
-
-      if (retries > 0) {
-        const delay = Math.min(1000 * (4 - retries), 3000); // Exponential backoff
-        this.sendWarning(
-          `Retrying in ${delay / 1000}s... (${retries} attempts left)`
-        );
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        return this.encodeImageFromUrl(url, type, headers, retries - 1);
-      }
-
-      throw new Error(
-        `Failed to fetch image after ${3 - retries} attempts: ${errorMessage}`
-      );
-    }
-  }
-
-  /**
-   * Saves an image from a URL to a local directory and tracks the file path
-   * @depreciated - use images directly in the client with DeskThing.useProxy(imageUrl) and avoid encoding them
-   *
-   * @param url - The direct URL to the image or local file path
-   * @returns Promise resolving to the saved image's filename
-   */
-  async saveImageReferenceFromURL(
-    url: string,
-    headers?: Record<string, string>
-  ): Promise<string | null> {
-    if (!this.manifest) {
-      this.loadManifest();
-    }
-
-    return this.imageHandler.saveImageReference(
-      url,
-      this.manifest?.id || "",
-      headers
-    );
-  }
   /**
    * -------------------------------------------------------
    * Deskthing Server Functions
@@ -2231,6 +1742,7 @@ export class DeskThingClass<
     console.log("[loadManifest]: Manifest not found in any location");
     return null;
   }
+
   /**
    * Returns the manifest in a Response structure
    * If the manifest is not found or fails to load, it returns a 500 status code.
@@ -2255,6 +1767,11 @@ export class DeskThingClass<
     return this.manifest;
   }
 
+  /**
+   * The updated way to send data to server
+   * Simply wraps postProcessMessage using the correct version
+   * @since v0.11.0
+   */
   private sendToServer = async (data: AppToDeskThingData | ToClientData) => {
     this.postProcessMessage({
       version: DeskThingClass.version,
@@ -2289,11 +1806,11 @@ export class DeskThingClass<
 
       // Stop all background tasks
       this.backgroundTasks.forEach((cancel) => cancel());
-      this.sendLog("Background tasks stopped");
+      console.log("Background tasks stopped");
 
       // Clear cached data
       this.clearCache();
-      this.sendLog("Cache cleared");
+      console.log("Cache cleared");
     } catch (error) {
       console.error("Error in Purge:", error);
       return {
@@ -2314,10 +1831,8 @@ export class DeskThingClass<
 
   // Method to clear cached data
   private clearCache(): void {
-    this.appData = null;
     this.Listeners = {};
     this.manifest = null;
-    this.SysEvents = null;
     this.stopRequested = false;
     this.backgroundTasks = [];
     this.sysListeners.forEach((removeListener) => removeListener());
@@ -2334,7 +1849,7 @@ export class DeskThingClass<
       })
     );
 
-    this.sendLog("Cache cleared");
+    console.log("Cache cleared");
   }
 
   /**
@@ -2355,17 +1870,10 @@ export class DeskThingClass<
             isValidAppDataInterface(data.payload);
             this.saveAppData(data.payload, false); // ensure it only saves locally in cache
           } catch (error) {
+            console.log("Received invalid data from server");
             console.error("Invalid app data interface:", error);
-            this.sendWarning("Received invalid data from server");
-            this.sendDebug("Data Received: " + JSON.stringify(data));
-            this.initializeData();
+            console.debug("Data Received: " + JSON.stringify(data));
             return;
-          }
-          if (
-            typeof data.payload === "object" &&
-            data.payload !== null &&
-            "appData" in data.payload
-          ) {
           }
           break;
         case DESKTHING_EVENTS.DATA:
@@ -2374,20 +1882,19 @@ export class DeskThingClass<
           }
           break;
         case DESKTHING_EVENTS.MESSAGE:
-          this.sendLog("Received message from server:" + data.payload);
+          console.log("Received message from server:" + data.payload);
           break;
         case DESKTHING_EVENTS.SETTINGS:
-          this.sendLog("Received settings from server:" + data.payload);
+          console.debug("Received settings from server:", data.payload);
           if (!data.payload) {
-            this.sendLog("Received invalid settings from server:" + data);
+            console.log("Received invalid settings from server:", data);
           } else {
-            const settings: AppSettings = data.payload;
-            this.addSettings(settings, false);
-            this.appData &&
-              this.notifyListeners(DESKTHING_EVENTS.APPDATA, {
-                type: DESKTHING_EVENTS.APPDATA,
-                payload: this.appData,
-              });
+            const settings = data.payload;
+
+            this.notifyListeners(DESKTHING_EVENTS.SETTINGS, {
+              type: DESKTHING_EVENTS.SETTINGS,
+              payload: settings,
+            })
           }
           break;
         default:
@@ -2395,9 +1902,9 @@ export class DeskThingClass<
           break;
       }
     } catch (error) {
-      this.sendLog(
+      console.error(
         "Encountered an error in toClient" +
-          (error instanceof Error ? error.message : error)
+        (error instanceof Error ? error.message : error)
       );
     }
   }

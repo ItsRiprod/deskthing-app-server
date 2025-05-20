@@ -2,12 +2,6 @@ import {
   Task,
   Step,
   STEP_TYPES,
-  TaskAction,
-  TaskShortcut,
-  TaskSetting,
-  TaskTask,
-  SettingReference,
-  SettingsType,
 } from "@deskthing/types";
 import { isValidAction, isValidActionReference } from "../actions/actionUtils";
 
