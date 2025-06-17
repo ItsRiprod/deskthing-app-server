@@ -67,7 +67,7 @@ export const isValidActionReference: (action: unknown) => asserts action is Acti
   
     if (typeof actionRef.enabled !== 'boolean') {
         (action as ActionReference).enabled = true // Default to enabled
-      throw new Error(
+      console.warn(
         'validateActionReference: enabled was not set to a boolean value'
       )
     }

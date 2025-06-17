@@ -106,10 +106,15 @@ export function isValidTaskAction(
     return; // early break if the action is an ID of an action
   }
 
-  if (typeof action === "object" && "version" in action) {
-    isValidAction(action);
-  } else {
-    isValidActionReference(action as unknown);
+  try {
+
+    if (typeof action === "object" && "version" in action) {
+      isValidAction(action);
+    } else {
+      isValidActionReference(action as unknown);
+    }
+  } catch (error) {
+    console.error(`There was an error validating the task action`, error)
   }
 }
 export function isValidTaskShortcut(
@@ -154,6 +159,7 @@ export function isValidTaskSetting(
     "select",
     "string",
     "color",
+    "file",
   ] as const;
 
   if (!s.setting.type || !validTypes.includes(s.setting.type)) {

@@ -82,7 +82,7 @@ export const isValidAppSettings: (
     try {
       isValidSettings(setting);
     } catch (error) {
-      throw error;
+      console.error(`Failed to validate settings!`, error)
     }
   });
 };

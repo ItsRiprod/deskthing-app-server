@@ -781,45 +781,39 @@ export class DeskThingClass<
    * })
    */
   setSettings = async (settings: AppSettings): Promise<void> => {
-    console.log("Adding settings..." + Object.keys(settings).toString());
+    console.log("Adding settings... " + Object.keys(settings).toString());
 
-    const existingSettings = await this.getSettings()
+    const existingSettings = await this.getSettings() || {}
 
     if (!settings || typeof settings !== "object") {
       throw new Error("Settings must be a valid object");
     }
 
-    if (existingSettings) {
-      Object.keys(settings).forEach((id) => {
-        const setting = settings[id];
+    // Loops through all the keys and sanitizes each setting
+    Object.entries(settings).forEach(([id, setting]) => {
 
-        if (!existingSettings) return;
-        if (!setting.type || !setting.label) {
-          throw new Error(`Setting ${id} must have a type and label`);
-        }
+      if (!setting.type || !setting.label) {
+        throw new Error(`Setting ${id} must have a type and label`);
+      }
 
-        if (existingSettings[id]) {
-          console.warn(
-            `Setting with label "${setting.label}" already exists. It will be overwritten.`
+      try {
+        existingSettings[id] = { ...sanitizeSettings(setting), id };
+      } catch (error) {
+        if (error instanceof Error) {
+          console.error(
+            `Error sanitizing setting with label "${setting.label}": ${error.message}`
+          );
+        } else {
+          console.error(
+            `Error sanitizing setting with label "${setting.label}": ${error}`
           );
         }
-        try {
-          existingSettings[id] = { ...sanitizeSettings(setting), id };
-        } catch (error) {
-          if (error instanceof Error) {
-            console.error(
-              `Error sanitizing setting with label "${setting.label}": ${error.message}`
-            );
-          } else {
-            console.error(
-              `Error sanitizing setting with label "${setting.label}": ${error}`
-            );
-          }
-        }
-      });
+      }
+    });
 
-      this.saveSettings(existingSettings)
-    }
+    console.log('Saving settings')
+
+    this.saveSettings(existingSettings)
   }
 
   /**
@@ -858,6 +852,7 @@ export class DeskThingClass<
   async initSettings(settings: AppSettings): Promise<void> {
 
     const existingSettings = await this.getSettings()
+
 
     const newSettings = Object.fromEntries(
       Object.entries(settings).filter(

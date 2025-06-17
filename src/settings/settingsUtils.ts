@@ -1,4 +1,4 @@
-import { SETTING_TYPES, SettingsBoolean, SettingsColor, SettingsList, SettingsMultiSelect, SettingsNumber, SettingsRange, SettingsRanked, SettingsSelect, SettingsString, SettingsType } from "@deskthing/types";
+import { CommonSetting, SETTING_TYPES, SettingsBoolean, SettingsColor, SettingsFile, SettingsList, SettingsMultiSelect, SettingsNumber, SettingsRange, SettingsRanked, SettingsSelect, SettingsString, SettingsType } from "@deskthing/types";
 
 /**
  * Validates a setting.
@@ -53,6 +53,8 @@ export const isValidSettings: (setting: unknown) => asserts setting is SettingsT
         case SETTING_TYPES.COLOR:
             if (typeof typedSetting.value !== 'string') throw new Error('[isValidSetting] Color setting value must be a string');
             break;
+        case SETTING_TYPES.FILE:
+            break; // nothing is needed technically speaking
         default:
             throw new Error(`[isValidSetting] Invalid setting type: ${JSON.stringify(typedSetting)}`);
     }
@@ -69,11 +71,19 @@ export const sanitizeSettings: (
 ) => SettingsType = (setting) => {
 
     isValidSettings(setting)
-
+    const commonSettings: CommonSetting = {
+        disabled: setting.disabled,
+        id: setting.id,
+        label: setting.label || setting.id || '',
+        value: setting.value,
+        source: setting.source,
+        description: setting.description || 'No Description',
+    }
 
     switch (setting.type) {
         case SETTING_TYPES.SELECT:
             setting = {
+                ...commonSettings,
                 type: SETTING_TYPES.SELECT,
                 value: setting.value,
                 label: setting.label,
@@ -84,6 +94,7 @@ export const sanitizeSettings: (
             break;
         case SETTING_TYPES.MULTISELECT:
             setting = {
+                ...commonSettings,
                 type: SETTING_TYPES.MULTISELECT,
                 value: setting.value,
                 label: setting.label,
@@ -94,6 +105,7 @@ export const sanitizeSettings: (
             break;
         case SETTING_TYPES.NUMBER:
             setting = {
+                ...commonSettings,
                 type: SETTING_TYPES.NUMBER,
                 value: setting.value,
                 label: setting.label,
@@ -104,6 +116,7 @@ export const sanitizeSettings: (
             break;
         case SETTING_TYPES.BOOLEAN:
             setting = {
+                ...commonSettings,
                 type: SETTING_TYPES.BOOLEAN,
                 value: setting.value,
                 description: setting.description || "",
@@ -112,6 +125,7 @@ export const sanitizeSettings: (
             break;
         case SETTING_TYPES.STRING:
             setting = {
+                ...commonSettings,
                 type: SETTING_TYPES.STRING,
                 description: setting.description || "",
                 value: setting.value,
@@ -120,6 +134,7 @@ export const sanitizeSettings: (
             break;
         case SETTING_TYPES.RANGE:
             setting = {
+                ...commonSettings,
                 type: SETTING_TYPES.RANGE,
                 value: setting.value,
                 label: setting.label,
@@ -131,6 +146,7 @@ export const sanitizeSettings: (
             break;
         case SETTING_TYPES.RANKED:
             setting = {
+                ...commonSettings,
                 type: SETTING_TYPES.RANKED,
                 value: setting.value,
                 label: setting.label,
@@ -140,6 +156,7 @@ export const sanitizeSettings: (
             break;
         case SETTING_TYPES.LIST:
             setting = {
+                ...commonSettings,
                 type: SETTING_TYPES.LIST,
                 value: setting.value,
                 label: setting.label,
@@ -153,11 +170,22 @@ export const sanitizeSettings: (
             break;
         case SETTING_TYPES.COLOR:
             setting = {
+                ...commonSettings,
                 type: SETTING_TYPES.COLOR,
                 value: setting.value,
                 label: setting.label,
                 description: setting.description || "",
             } as SettingsColor
+            break;
+        case SETTING_TYPES.FILE:
+            setting = {
+                ...commonSettings,
+                type: SETTING_TYPES.FILE,
+                value: setting.value,
+                label: setting.label,
+                fileTypes: setting.fileTypes || [],
+                placeholder: setting.placeholder || "",
+            } as SettingsFile
             break;
         default:
             throw new Error(`[isValidSetting] Unknown setting type: ${setting}`);
@@ -165,8 +193,8 @@ export const sanitizeSettings: (
     return setting as SettingsType;
 };
 
-  export const settingHasOptions: (setting: SettingsType) => asserts setting is SettingsRanked | SettingsList | SettingsSelect | SettingsMultiSelect = (setting) => {
-      if (!setting) throw new Error('[settingHasOptions] Setting must be defined');
-      if (!setting.type) throw new Error('[settingHasOptions] Setting type must be defined');
-      return setting.type === SETTING_TYPES.RANKED || setting.type === SETTING_TYPES.LIST || setting.type === SETTING_TYPES.SELECT || setting.type === SETTING_TYPES.MULTISELECT;
-  }
+export const settingHasOptions: (setting: SettingsType) => asserts setting is SettingsRanked | SettingsList | SettingsSelect | SettingsMultiSelect = (setting) => {
+    if (!setting) throw new Error('[settingHasOptions] Setting must be defined');
+    if (!setting.type) throw new Error('[settingHasOptions] Setting type must be defined');
+    return setting.type === SETTING_TYPES.RANKED || setting.type === SETTING_TYPES.LIST || setting.type === SETTING_TYPES.SELECT || setting.type === SETTING_TYPES.MULTISELECT;
+}
