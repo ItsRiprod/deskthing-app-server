@@ -24,8 +24,9 @@ export const isValidSettings: (setting: unknown) => asserts setting is SettingsT
     switch (typedSetting.type) {
         case SETTING_TYPES.NUMBER:
             if (typeof typedSetting.value !== 'number') throw new Error('[isValidSetting] Number setting value must be a number');
-            if (typeof typedSetting.min !== 'number') throw new Error('[isValidSetting] Number setting min must be a number');
-            if (typeof typedSetting.max !== 'number') throw new Error('[isValidSetting] Number setting max must be a number');
+            if (typedSetting.min && typeof typedSetting.min !== 'number') throw new Error('[isValidSetting] Number setting min must be a number');
+            if (typedSetting.max && typeof typedSetting.max !== 'number') throw new Error('[isValidSetting] Number setting max must be a number');
+            if (typedSetting.step && typeof typedSetting.step !== 'number') throw new Error('[isValidSetting] Number setting max must be a number');
             break;
         case SETTING_TYPES.BOOLEAN:
             if (typeof typedSetting.value !== 'boolean') throw new Error('[isValidSetting] Boolean setting value must be a boolean');
@@ -46,12 +47,12 @@ export const isValidSettings: (setting: unknown) => asserts setting is SettingsT
             break;
         case SETTING_TYPES.RANGE:
             if (typeof typedSetting.value !== 'number') throw new Error('[isValidSetting] Range setting value must be a number');
-            if (typeof typedSetting.min !== 'number') throw new Error('[isValidSetting] Range setting min must be a number');
-            if (typeof typedSetting.max !== 'number') throw new Error('[isValidSetting] Range setting max must be a number');
-            if (typedSetting.step && typeof typedSetting.step !== 'number') throw new Error('[isValidSetting] Range setting step must be a number');
+            if (typedSetting.min && typeof typedSetting.min !== 'number') throw new Error('[isValidSetting] Range setting min must be a number');
+            if (typedSetting.max && typeof typedSetting.max !== 'number') throw new Error('[isValidSetting] Range setting max must be a number');
+            if (typedSetting.step && typeof typedSetting.step !== 'number') throw new Error('[isValidSetting] Range setting max must be a number');
             break;
         case SETTING_TYPES.COLOR:
-            if (typeof typedSetting.value !== 'string') throw new Error('[isValidSetting] Color setting value must be a string');
+            if (typedSetting.value && typeof typedSetting.value !== 'string') throw new Error('[isValidSetting] Color setting value must be a string');
             break;
         case SETTING_TYPES.FILE:
             break; // nothing is needed technically speaking
@@ -72,6 +73,7 @@ export const sanitizeSettings: (
 
     isValidSettings(setting)
     const commonSettings: CommonSetting = {
+        ...setting,
         disabled: setting.disabled,
         id: setting.id,
         label: setting.label || setting.id || '',

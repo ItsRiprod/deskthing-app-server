@@ -1,6 +1,6 @@
 {
   "name": "@deskthing/server",
-  "version": "0.11.2",
+  "version": "0.11.6",
   "description": "The Deskthing connector for the server apps",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -16,7 +16,7 @@
   "author": "Riprod",
   "license": "MIT",
   "devDependencies": {
-    "@deskthing/types": "^0.11.11",
+    "@deskthing/types": "^0.11.16",
     "@types/node": "^22.2.0",
     "esbuild": "^0.24.2",
     "typescript": "^5.5.4"

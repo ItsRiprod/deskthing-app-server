@@ -273,7 +273,6 @@ export class DeskThingClass<
     event: E,
     callback: DeskThingListener<ToAppData, E, string>
   ): () => void {
-    console.log("Registered a new listener for event: " + event);
     if (!this.Listeners[event]) {
       this.Listeners[event] = [];
     }
@@ -386,7 +385,7 @@ export class DeskThingClass<
     callback?: (
       data: ExtractDeskThingPayload<ToAppData, T, R> | undefined
     ) => void,
-    timeoutMs: number = 5000
+    timeoutMs: number = 500
   ): Promise<ExtractDeskThingPayload<ToAppData, T, R> | undefined> => {
     if (!requestData.type) {
       console.warn(`[fetch]: Request Data doesn't have a "type" field`);
@@ -646,7 +645,9 @@ export class DeskThingClass<
       },
       {
         type: DESKTHING_EVENTS.SETTINGS,
-      }
+      },
+      () => { },
+      500
     );
     if (!socketData?.payload) {
       console.error("[getSettings]: Settings are not defined!");
@@ -781,7 +782,6 @@ export class DeskThingClass<
    * })
    */
   setSettings = async (settings: AppSettings): Promise<void> => {
-    console.log("Adding settings... " + Object.keys(settings).toString());
 
     const existingSettings = await this.getSettings() || {}
 
@@ -810,9 +810,6 @@ export class DeskThingClass<
         }
       }
     });
-
-    console.log('Saving settings')
-
     this.saveSettings(existingSettings)
   }
 
@@ -833,7 +830,7 @@ export class DeskThingClass<
       settingHasOptions(existingSettings[settingId]);
     } catch (error) {
       if (error instanceof Error) {
-        console.error(error.message);
+        console.error(`Error setting option of setting: ${settingId}`, error.message);
       }
       return;
     }
@@ -851,16 +848,8 @@ export class DeskThingClass<
    */
   async initSettings(settings: AppSettings): Promise<void> {
 
-    const existingSettings = await this.getSettings()
-
-
-    const newSettings = Object.fromEntries(
-      Object.entries(settings).filter(
-        ([key]) => !existingSettings || !(key in existingSettings)
-      )
-    ) satisfies AppSettings;
-
-    this.setSettings(newSettings); // only add the new settings
+    // This now just wraps this handler - this will set the settings on the server and then notify the app of the updated settings
+    this.sendSocketData(APP_REQUESTS.SET, settings, "settings-init");
   }
 
   /**
@@ -930,6 +919,50 @@ export class DeskThingClass<
       throw new Error("Action must have a valid id");
     }
     this.sendSocketData(APP_REQUESTS.ACTION, action, "add");
+  }
+
+  /**
+   * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
+   *
+   * @param action - The action object to register.
+   * @throws {Error} If the action object is invalid.
+   * @example
+   * const action = {
+   *      name: 'Like'
+   *      description: 'Likes the currently playing song'
+   *      id: 'likesong'
+   *      value: 'toggle'
+   *      value_options: ['like', 'dislike', 'toggle']
+   *      value_instructions: 'Determines whether to like, dislike, or toggle the currently liked song'
+   *      icon: 'likesongicon' // overrides "id" and instead looks in /public/icons/likesongicon.svg
+   *      version: 'v0.10.1'
+   *      tag: 'media'
+   * }
+   * DeskThing.registerAction(action)
+   * DeskThing.on('action', (data) => {
+   *      if (data.payload.id === 'likesong') {
+   *          DeskThing.sendLog('Like Song value is set to: ', data.value)
+   *      }
+   * })
+   * @example
+   * // Super minimal action
+   * const action = {
+   *      id: 'trigger' // looks for icon in /public/icons/trigger.svg
+   * }
+   * DeskThing.registerAction(action)
+   * DeskThing.on('action', (data) => {
+   *      if (data.payload.id === 'trigger') {
+   *          DeskThing.sendLog('An action was triggered!')
+   *      }
+   * })
+   */
+  initActions(actions: Action[]): void {
+    if (!actions || !Array.isArray(actions)) {
+      throw new Error("Invalid action object");
+    }
+
+    // initializes the actions on the server
+    this.sendSocketData(APP_REQUESTS.ACTION, actions, "init");
   }
   /**
    * Registers a new action to the server. This can be mapped to any key on the deskthingserver UI.
@@ -1018,7 +1051,7 @@ export class DeskThingClass<
       enabled: true,
     };
 
-    this.sendSocketData(APP_REQUESTS.KEY, key, "add");
+    this.sendSocketData(APP_REQUESTS.KEY, newKey, "add");
   }
 
   /**
@@ -1088,11 +1121,21 @@ export class DeskThingClass<
     ): Promise<void> => {
       try {
         const newTasks = Object.entries(taskData).reduce<Record<string, Task>>(
-          (validatedTasks, [_id, task]) => {
+          (validatedTasks, [id, task]) => {
             try {
-              const newTask = {
+              // Creates a new task object
+              const newTask: Task = {
                 ...task,
+                id,
                 source: this.manifest?.id || "unknown",
+                steps: Object.fromEntries(Object.entries(task.steps).map(([stepId, step]) => [
+                  stepId,
+                  {
+                    ...step,
+                    id: step.id || stepId,
+                    source: step.source || this.manifest?.id || "unknown",
+                  }
+                ]))
               };
               isValidTask(newTask);
               return { ...validatedTasks, [newTask.id]: newTask };
@@ -1416,14 +1459,15 @@ export class DeskThingClass<
   }
 
   /**
-   * Saves settings to server - overwriting existing settings and notifies listeners
+   * Saves settings to server - overwriting existing settings
    */
   saveSettings(settings: AppSettings): void {
-    this.notifyListeners(DESKTHING_EVENTS.SETTINGS, {
-      type: DESKTHING_EVENTS.SETTINGS,
-      payload: settings,
-    })
+    // this.notifyListeners(DESKTHING_EVENTS.SETTINGS, {
+    //   type: DESKTHING_EVENTS.SETTINGS,
+    //   payload: settings,
+    // })
 
+    // Theoretically, this should notify the listeners and notifying them twice here will be bad
     this.sendSocketData(APP_REQUESTS.SET, settings, "settings");
   }
 
@@ -1668,7 +1712,6 @@ export class DeskThingClass<
       process.env.DESKTHING_ROOT_PATH || __dirname,
       "../deskthing/manifest.json"
     );
-    console.log(devManifestPath);
     const oldBuiltManifestPath = path.resolve(
       process.env.DESKTHING_ROOT_PATH || __dirname,
       "./manifest.json"
@@ -1801,11 +1844,9 @@ export class DeskThingClass<
 
       // Stop all background tasks
       this.backgroundTasks.forEach((cancel) => cancel());
-      console.log("Background tasks stopped");
 
       // Clear cached data
       this.clearCache();
-      console.log("Cache cleared");
     } catch (error) {
       console.error("Error in Purge:", error);
       return {
@@ -1843,8 +1884,6 @@ export class DeskThingClass<
         }
       })
     );
-
-    console.log("Cache cleared");
   }
 
   /**
@@ -1880,9 +1919,8 @@ export class DeskThingClass<
           console.log("Received message from server:" + data.payload);
           break;
         case DESKTHING_EVENTS.SETTINGS:
-          console.debug("Received settings from server:", data.payload);
           if (!data.payload) {
-            console.log("Received invalid settings from server:", data);
+            console.warn("Received invalid settings from server:", data);
           } else {
             const settings = data.payload;
 

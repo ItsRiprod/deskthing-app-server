@@ -2,6 +2,7 @@ import {
   Task,
   Step,
   STEP_TYPES,
+  SETTING_TYPES,
 } from "@deskthing/types";
 import { isValidAction, isValidActionReference } from "../actions/actionUtils";
 
@@ -149,18 +150,7 @@ export function isValidTaskSetting(
     return; // early break for string settings
   }
 
-  const validTypes = [
-    "boolean",
-    "list",
-    "multiselect",
-    "number",
-    "range",
-    "ranked",
-    "select",
-    "string",
-    "color",
-    "file",
-  ] as const;
+  const validTypes = Object.values(SETTING_TYPES)
 
   if (!s.setting.type || !validTypes.includes(s.setting.type)) {
     throw new Error(
