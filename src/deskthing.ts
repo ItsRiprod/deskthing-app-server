@@ -23,6 +23,7 @@ import {
   GenericTransitData,
   TransitData,
   DeskThingToAppCore,
+  NotificationMessage,
 } from "@deskthing/types";
 import { sanitizeSettings, settingHasOptions } from "./settings/settingsUtils";
 import { parentPort } from "worker_threads";
@@ -577,6 +578,76 @@ export class DeskThingClass<
   }
 
   /**
+   * Sends a notification message to the client via socket and optionally waits for a user response.
+   *
+   * - For notification types `'error'`, `'info'`, `'passive'`, and `'warning'`, the method immediately returns without waiting for a response.
+   * - For other types, it waits for an acknowledgement or response from the user, which is returned as a boolean, string, or `undefined`.
+   * - An optional callback can be provided, which will be invoked with the response (or `undefined` for non-returnable types).
+   *
+   * @since Server v0.11.17
+   * 
+   * @param notificationData - {@link: NotificationMessage} The notification message to send, including its type and unique ID.
+   * @param callback - Optional. A function to be called with the response or `undefined` after the notification is handled.
+   * @returns A promise that resolves to the user's response (`boolean`, `string`, or `undefined`), or `undefined` for non-returnable types.
+   *
+   * @example
+   * // Send a passive notification (no response expected)
+   * await deskThing.sendNotification({ id: 'notif1', type: 'info', title: 'Hello!' });
+   *
+   * @example
+   * // Send a notification and handle the response with a callback
+   * deskThing.sendNotification(
+   *   { id: 'notif2', type: 'confirm', title: 'Do you want to continue?' },
+   *   (response) => {
+   *     if (response === true) {
+   *       console.log('User confirmed!');
+   *     }
+   *   }
+   * );
+   *
+   * @example
+   * // Send a notification and await the user's response
+   * const result = await deskThing.sendNotification({ id: 'notif3', type: 'prompt', message: 'Enter your name:' });
+   * console.log('User response:', result);
+   */
+  sendNotification = async (notificationData: Omit<NotificationMessage, 'source'>, callback?: (data: boolean | string | undefined) => Promise<void> | void): Promise<boolean | string | undefined> => {
+    
+    const correctedNotificationData: NotificationMessage = {...notificationData, source: this.manifest?.id || 'unknown'}
+
+    this.sendSocketData(APP_REQUESTS.MESSAGE, correctedNotificationData);
+
+    const nonreturnableTypes: NotificationMessage['type'][] = ['error', 'info', 'passive', 'warning']
+
+    // if the error is a passive type, immediately return
+    if (nonreturnableTypes.includes(correctedNotificationData.type)) {
+      await callback?.(undefined) // trigger the callback
+      return
+    }
+
+    // otherwise, wait for the acknowledgement from the user
+    const response = await new Promise<undefined | boolean | string>((res) => {
+      const off = this.on(DESKTHING_EVENTS.MESSAGE, (data) => {
+        
+        if (data.payload.id == correctedNotificationData.id) {
+          off()
+          if ('response' in data.payload) {
+            res(data.payload.response)
+          } else {
+            res(undefined)
+          }
+        }
+      })
+    })
+
+    // trigger the callback
+    await callback?.(response)
+
+    // return the response
+    return response
+  }
+
+
+  /**
    * Fetches data from the server if not already retrieved, otherwise returns the cached data.
    * This method also handles queuing requests while data is being fetched.
    *
@@ -849,7 +920,7 @@ export class DeskThingClass<
   async initSettings(settings: AppSettings): Promise<void> {
 
     // This now just wraps this handler - this will set the settings on the server and then notify the app of the updated settings
-    this.sendSocketData(APP_REQUESTS.SET, settings, "settings-init");
+    this.sendSocketData(APP_REQUESTS.SET, settings, 'settings-init');
   }
 
   /**
