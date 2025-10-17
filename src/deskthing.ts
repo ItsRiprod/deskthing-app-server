@@ -24,10 +24,14 @@ import {
   TransitData,
   DeskThingToAppCore,
   NotificationMessage,
+  AgentMessage,
+  AGENT_MESSAGE_TYPES,
 } from "@deskthing/types";
 import { sanitizeSettings, settingHasOptions } from "./settings/settingsUtils";
 import { parentPort } from "worker_threads";
 import { isValidAppDataInterface } from "./utils/validators";
+import { AGENT_MESSAGE_VERSION, VALID_STEP_FIELDS, VALID_TASK_FIELDS } from "./utils/constants";
+import { bufferToTransferable } from "./utils/bufferUtils";
 
 type Response = {
   data: any;
@@ -542,7 +546,50 @@ export class DeskThingClass<
       ...payload
     }
 
-    this.sendSocketData(APP_REQUESTS.SEND, filledPayload);
+    this.sendSocketData(APP_REQUESTS.SEND, filledPayload, 'json');
+  }
+
+  /**
+   * 
+   * sends binary data to the client for the client to listen to
+   * 
+   * ## Notice:
+   * You **WILL** lose ownership of the ArrayBuffer once sent. So ensure you copy it if further processing is needed on the buffer
+   * @param binary - ArrayBuffer
+   * @param ClientID - the clientId to send it to if specified - otherwise, will burst to all clients (not recommended)
+   * 
+   * 
+   * @since 0.11.17
+   * @example
+   * // Server
+   * const binaryData = new Uint8Array([0, 1, 2, 3, 4]).buffer;
+   * DeskThing.sendBinary(binaryData);
+   * 
+   * // Client
+   * DeskThing.on(DESKTHING_CLIENT.BINARY, (data: ArrayBuffer) => {
+   *  console.log('Received binary data:', new Uint8Array(data));
+   * });
+   */
+  public sendBinary(binary: ArrayBuffer, clientId?: string): void {
+
+    const processMessage = {
+      version: DeskThingClass.version,
+      type: "binary",
+      payload: {
+        app: this.manifest?.id,
+        clientId: clientId,
+        payload: binary,
+      },
+    } as AppProcessData<ToClientData>;
+
+    const transferList = binary instanceof ArrayBuffer ? [binary] : undefined;
+
+    // Post to parent, casting transfer list to satisfy TypeScript
+    if (transferList && parentPort?.postMessage) {
+      this.postProcessMessage(processMessage, transferList);
+    } else {
+      this.postProcessMessage(processMessage);
+    }
   }
 
   sendSong(songData: SongData) {
@@ -611,8 +658,8 @@ export class DeskThingClass<
    * console.log('User response:', result);
    */
   sendNotification = async (notificationData: Omit<NotificationMessage, 'source'>, callback?: (data: boolean | string | undefined) => Promise<void> | void): Promise<boolean | string | undefined> => {
-    
-    const correctedNotificationData: NotificationMessage = {...notificationData, source: this.manifest?.id || 'unknown'}
+
+    const correctedNotificationData: NotificationMessage = { ...notificationData, source: this.manifest?.id || 'unknown' }
 
     this.sendSocketData(APP_REQUESTS.MESSAGE, correctedNotificationData);
 
@@ -627,7 +674,7 @@ export class DeskThingClass<
     // otherwise, wait for the acknowledgement from the user
     const response = await new Promise<undefined | boolean | string>((res) => {
       const off = this.on(DESKTHING_EVENTS.MESSAGE, (data) => {
-        
+
         if (data.payload.id == correctedNotificationData.id) {
           off()
           if ('response' in data.payload) {
@@ -1241,21 +1288,10 @@ export class DeskThingClass<
      * });
      */
     update: (taskId: string, task: Partial<Task>) => {
-      const validStepFields: (keyof Task)[] = [
-        "id",
-        "label",
-        "completed",
-        "currentStep",
-        "started",
-        "source",
-        "version",
-        "available",
-        "description",
-        "steps",
-      ];
+
       const sanitizedUpdates = Object.fromEntries(
         Object.entries(task).filter(([key]) =>
-          validStepFields.includes(key as keyof Task)
+          VALID_TASK_FIELDS.includes(key as keyof Task)
         )
       );
       this.sendSocketData(
@@ -1328,6 +1364,142 @@ export class DeskThingClass<
       this.sendSocketData(APP_REQUESTS.TASK, {}, "get");
     },
   };
+
+  public agent = {
+    /**
+     * Sends a response message back to the client.
+     * @param response - The response message to send back to the client.
+     * @param clientId - The ID of the client to send the response to.
+     */
+    sendResponse: (response: Omit<AgentMessage, 'source' | 'version' | 'timestamp' | 'clientId'>, clientId: string) => {
+
+      const filledResponse: AgentMessage & { clientId: string } = {
+        ...response,
+        source: this.manifest?.id || 'unknown',
+        version: AGENT_MESSAGE_VERSION,
+        timestamp: Date.now(),
+        clientId: clientId
+      } as AgentMessage & { clientId: string }
+
+      this.sendSocketData(APP_REQUESTS.AGENT, filledResponse, 'response');
+    },
+
+    sendCommand: <T extends Extract<AppToDeskThingData, { type: APP_REQUESTS.AGENT }>['request']>(command: T, payload: ExtractAppPayload<AppToDeskThingData, APP_REQUESTS.AGENT, T>['payload']) => {
+      this.sendSocketData(APP_REQUESTS.AGENT, payload, command);
+    },
+
+    sendContext: (context: AgentMessage[], clientId: string) => {
+
+      // fill in any gaps
+      const filledContext: (AgentMessage & { clientId: string })[] = context.map(ctx => ({
+        ...ctx,
+        source: this.manifest?.id || 'unknown',
+        version: AGENT_MESSAGE_VERSION,
+        clientId: clientId
+      }));
+
+      // send to the server
+      this.agent.sendCommand('context', filledContext);
+    },
+
+    /**
+     * @deprecated - Not implemented yet
+     * 
+     * Fetches available actions from the server.
+     * @throws {Error} Always, as this is not implemented yet.
+     * @example
+     * const actions = await deskthing.agent.getAvailableActions();
+     */
+    getAvailableActions: async () => {
+
+      throw new Error("Available actions are not implemented yet")
+    },
+    /**
+     * @deprecated - Not implemented yet
+     * 
+     * Fetches the context string from the server.
+      * @throws {Error} Always, as this is not implemented yet.
+      * @example
+     * const context = await deskthing.agent.getContextString();
+     */
+    getContextString: async () => {
+      throw new Error("Context string fetching is not implemented yet")
+    },
+
+    /**
+     * @deprecated - Not implemented yet
+     * 
+     * Fetches available apps from the server.
+     * @throws {Error} Always, as this is not implemented yet.
+     * @example
+     * const apps = await deskthing.agent.getAvailableApps();
+     */
+    getAvailableApps: async () => {
+      throw new Error("Available apps fetching is not implemented yet")
+    }
+  }
+
+  public settings = {
+    /**
+     * Initializes settings on the server.
+     */
+    init: (settings: AppSettings) => {
+      this.sendSocketData(APP_REQUESTS.SETTINGS, settings, "init");
+    },
+
+    /**
+     * Sets all settings (overwrites).
+     */
+    set: (settings: AppSettings) => {
+      this.sendSocketData(APP_REQUESTS.SETTINGS, settings, "set");
+    },
+
+    /**
+     * Gets all settings from the server.
+     */
+    get: async (): Promise<AppSettings | null> => {
+
+      const socketData = await this.fetch(
+        {
+          type: APP_REQUESTS.SETTINGS,
+          request: "get",
+        },
+        {
+          type: DESKTHING_EVENTS.SETTINGS,
+        },
+        () => { },
+        500
+      );
+      if (!socketData?.payload) {
+        console.error("[getSettings]: Settings are not defined!");
+        return null;
+      }
+
+      return socketData.payload;
+
+    },
+
+    /**
+     * Sets the value of a specific setting.
+     */
+    setValue: (key: string, value: any) => {
+      this.sendSocketData(APP_REQUESTS.SETTINGS, { key, value }, "set-value");
+    },
+
+    /**
+     * Sets the options for a specific setting.
+     */
+    setOptions: (key: string, value: SettingOption[]) => {
+      this.sendSocketData(APP_REQUESTS.SETTINGS, { key, value }, "set-options");
+    },
+
+    /**
+     * Deletes one or more settings.
+     */
+    delete: (key: string | string[]) => {
+      this.sendSocketData(APP_REQUESTS.SETTINGS, key, "delete");
+    },
+  }
 
   public steps = {
     /**
@@ -1427,26 +1599,8 @@ export class DeskThingClass<
      * @param updates - Partial Step object containing the fields to update
      */
     update: (taskId: string, stepId: string, updates: Partial<Step>) => {
-      const validStepFields = [
-        "parentId",
-        "id",
-        "debug",
-        "strict",
-        "type",
-        "label",
-        "instructions",
-        "completed",
-        "debugging",
-        "source",
-        "action",
-        "url",
-        "taskId",
-        "taskSource",
-        "destination",
-        "setting",
-      ];
       const sanitizedUpdates = Object.fromEntries(
-        Object.entries(updates).filter(([key]) => validStepFields.includes(key))
+        Object.entries(updates).filter(([key]) => VALID_STEP_FIELDS.includes(key))
       ) as Step;
       this.sendSocketData(
         APP_REQUESTS.STEP,
@@ -1890,12 +2044,28 @@ export class DeskThingClass<
   };
 
   private postProcessMessage = async (
-    data: AppProcessData<ToClientData>
+    data: AppProcessData<ToClientData>,
+    transferList?: any[]
   ): Promise<void> => {
-    if (parentPort?.postMessage) {
-      parentPort.postMessage(data);
-    } else {
-      console.error("Parent port or postmessage is undefined!");
+    if (!parentPort?.postMessage) {
+      console.error("Parent port or postMessage is undefined!");
+      return;
+    }
+
+    try {
+      if (transferList && transferList.length) {
+        parentPort.postMessage(data, transferList);
+      } else {
+        parentPort.postMessage(data);
+      }
+    } catch (err) {
+      // If transfer fails, try without transfer to avoid crashing the worker
+      console.error("postProcessMessage failed with transferList, retrying without transfer:", err);
+      try {
+        parentPort.postMessage(data);
+      } catch (err2) {
+        console.error("postProcessMessage failed:", err2);
+      }
     }
   };
 
